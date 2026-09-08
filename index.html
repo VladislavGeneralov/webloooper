@@ -51,9 +51,16 @@
          no accidental text selection or long-press callouts while playing
          on a phone. Interactive controls (knob, faders) still work - they
          handle their own drag via pointer events / native slider behavior,
-         which isn't blocked by this. */
+         which isn't blocked by this. pan-y (not none): unlike
+         kladmineralovweb/SCDJ's single fixed-height "stage", this page
+         stacks 4 growing player cards - measured to fit on common phone
+         viewports (390x844, 375x667, before/after a recording) with no
+         overflow, but touch-action:none would leave no way to scroll if
+         some device/content combination ever does overflow. pan-y keeps
+         vertical scroll as a safety net while still blocking pinch-zoom
+         and horizontal panning. */
       overscroll-behavior: none;
-      touch-action: none;
+      touch-action: pan-y;
       user-select: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
