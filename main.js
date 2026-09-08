@@ -553,6 +553,33 @@ class Player {
   }
 
   // -------------------------
+  // TRIM TO EXACT DIVISION
+  // -------------------------
+  // splitInto4Buffers() below derives L=floor(2T/(N+1)), S=floor(L/2) - any
+  // remainder gets silently dropped by those floors. Trimming the recording
+  // to a multiple of 2*(N+1)=10 samples first makes both divisions land on
+  // exact integers, so there's no rounding remainder at all (already
+  // sub-millisecond in practice, but this removes it outright for the cost
+  // of at most 9 samples, <0.2ms, trimmed off the very end).
+  trimToExactDivision(buffer) {
+    const N = 4;
+    const unit = 2 * (N + 1);
+    const total = buffer.length;
+    const trimmedLength = total - (total % unit);
+
+    if (trimmedLength === total || trimmedLength === 0) return buffer;
+
+    const ctx = sharedCtx;
+    const trimmed = ctx.createBuffer(buffer.numberOfChannels, trimmedLength, buffer.sampleRate);
+
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      trimmed.copyToChannel(buffer.getChannelData(ch).subarray(0, trimmedLength), ch, 0);
+    }
+
+    return trimmed;
+  }
+
+  // -------------------------
   // SPLIT 4 BUFFERS (50% overlap)
   // -------------------------
   splitInto4Buffers(audioBuffer) {
