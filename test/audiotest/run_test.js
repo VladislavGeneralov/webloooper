@@ -11,6 +11,8 @@ const path = require("path");
 const { spawn } = require("child_process");
 
 const APP_DIR = process.argv[2];
+const RECORD_SEC = parseFloat(process.argv[3]) || 3.5;
+const PLAYBACK_SEC = parseFloat(process.argv[4]) || 20;
 const WAV_PATH = path.resolve(__dirname, "test-signal.wav");
 const PORT = 8791;
 const CHROME_PATHS = [
@@ -78,12 +80,12 @@ async function main() {
     await page.click('.controls:nth-of-type(1) [data-role="shuffle"]');
 
     await page.click('.controls:nth-of-type(1) [data-role="recStop"]'); // start recording
-    console.log("recording...");
-    await new Promise((r) => setTimeout(r, 3500));
+    console.log(`recording for ${RECORD_SEC}s...`);
+    await new Promise((r) => setTimeout(r, RECORD_SEC * 1000));
 
     await page.click('.controls:nth-of-type(1) [data-role="recStop"]'); // stop -> decode -> split -> startPlayback
-    console.log("stopped, now playing back with shuffle for 20s...");
-    await new Promise((r) => setTimeout(r, 20000));
+    console.log(`stopped, now playing back with shuffle for ${PLAYBACK_SEC}s...`);
+    await new Promise((r) => setTimeout(r, PLAYBACK_SEC * 1000));
 
     const meta = await page.evaluate(() => {
       const chunks = window.__capturedChunks;
