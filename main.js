@@ -504,14 +504,24 @@ class Player {
     // 2 steps past the end of the source's own buffer content, see
     // scheduleFadeLane(). Reading the real value is what surfaced that,
     // and is what actually verifies the fix.)
-    const liveGains = [0, 0, 0, 0];
+    //
+    // The fill is positioned by contentIndex (which quarter of the
+    // RECORDING this lane is currently playing), not by lane number - so
+    // the debug numbers underneath must be indexed the same way. Indexing
+    // them by lane instead (as before) matched the color only when
+    // shuffle is off (contentIndex === lane then); with shuffle on, the
+    // number under a given quarter could belong to a totally different
+    // lane than the one whose gain is actually painting that quarter.
+    const gainByContent = [0, 0, 0, 0];
     for (let lane = 0; lane < 4; lane++) {
       const contentIndex = this.currentLaneContent[lane];
       const envGain = this.originalEnvGains[lane];
       const gain = envGain ? envGain.gain.value : 0;
-      liveGains[lane] = gain;
 
-      if (contentIndex == null || gain <= 0.01) continue;
+      if (contentIndex == null) continue;
+      gainByContent[contentIndex] = Math.max(gainByContent[contentIndex], gain);
+
+      if (gain <= 0.01) continue;
 
       const x0 = quarterX(contentIndex);
       const x1 = quarterX(contentIndex + 1);
@@ -522,7 +532,7 @@ class Player {
     if (this.els.gainDebug) {
       const spans = this.els.gainDebug.children;
       for (let i = 0; i < 4 && i < spans.length; i++) {
-        spans[i].textContent = liveGains[i].toFixed(2);
+        spans[i].textContent = gainByContent[i].toFixed(2);
       }
     }
 
