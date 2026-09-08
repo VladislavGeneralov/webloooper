@@ -269,7 +269,12 @@
 
     /* Round toggle button (shuffle): dark housing always stays dark - only
        a small inset LED dot (::after) lights up green when on, instead of
-       flooding the whole button with color. */
+       flooding the whole button with color. Centered via flex (not
+       top/left:50% + translate(-50%)) - that transform trick computes a
+       half-pixel center on this 17px (odd) box, which browsers can round
+       asymmetrically. The dot is 5px, also odd, so (17-5)/2 = 6px lands
+       on a whole pixel each side either way - flex centering just avoids
+       relying on subpixel math to get there. */
     .mixer-toggle {
       width: 17px;
       height: 17px;
@@ -279,18 +284,16 @@
       cursor: pointer;
       padding: 0;
       flex-shrink: 0;
-      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .mixer-toggle::after {
       content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 4px;
-      height: 4px;
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
-      transform: translate(-50%, -50%);
       background: var(--black2);
     }
 
