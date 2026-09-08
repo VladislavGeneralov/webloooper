@@ -2,6 +2,11 @@ const MAX_DURATION = 10;
 const SCHEDULER_LOOKAHEAD = 0.05;
 const MIN_SCHEDULING_GAP = 0.01;
 
+// Fixed internal resolution for the waveform canvas - see renderWaveform()
+// for why this is deliberately NOT derived from clientWidth/devicePixelRatio.
+const WAVEFORM_CANVAS_W = 320;
+const WAVEFORM_CANVAS_H = 112;
+
 // -------------------------
 // SHARED AUDIO CONTEXT + MIX BUS
 // -------------------------
@@ -445,19 +450,24 @@ class Player {
   // -------------------------
   // WAVEFORM DISPLAY
   // -------------------------
-  // Peaks are computed once per recording (cheap to redraw from), so the
-  // per-frame renderWaveform() below only ever does a cheap redraw + a
-  // live read of each lane's current gain - no per-frame sample scanning.
+  // Fixed internal resolution, deliberately decoupled from any live layout
+  // measurement (canvas.clientWidth, devicePixelRatio). CSS alone scales
+  // the finished bitmap down to whatever the container's actual size is.
+  // Previously canvas.width/height were set from clientWidth*dpr every
+  // frame - on a high-DPI phone that intrinsic buffer size can reach
+  // 300-450px+, and grid/flex items floor at their content's intrinsic
+  // size by default, so that oversized buffer forced the whole card to
+  // grow wide instead of the canvas shrinking via width:100% as intended.
+  // A canvas whose width/height never change after the first draw can't
+  // trigger that regardless of any ancestor's min-width handling.
   computeWaveformPeaks(buffer) {
-    const canvas = this.els.waveform;
-    const cssWidth = (canvas && canvas.clientWidth) || 160;
     const data = buffer.getChannelData(0);
-    const samplesPerPixel = Math.max(1, Math.floor(data.length / cssWidth));
+    const samplesPerPixel = Math.max(1, Math.floor(data.length / WAVEFORM_CANVAS_W));
 
-    const min = new Float32Array(cssWidth);
-    const max = new Float32Array(cssWidth);
+    const min = new Float32Array(WAVEFORM_CANVAS_W);
+    const max = new Float32Array(WAVEFORM_CANVAS_W);
 
-    for (let x = 0; x < cssWidth; x++) {
+    for (let x = 0; x < WAVEFORM_CANVAS_W; x++) {
       const start = x * samplesPerPixel;
       if (start >= data.length) {
         min[x] = 0;
@@ -489,28 +499,19 @@ class Player {
     const canvas = this.els.waveform;
     if (!canvas || !this.waveformPeaks) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    const cssWidth = canvas.clientWidth || 160;
-    const cssHeight = canvas.clientHeight || 56;
-    const targetW = Math.round(cssWidth * dpr);
-    const targetH = Math.round(cssHeight * dpr);
-    if (canvas.width !== targetW || canvas.height !== targetH) {
-      canvas.width = targetW;
-      canvas.height = targetH;
+    if (canvas.width !== WAVEFORM_CANVAS_W || canvas.height !== WAVEFORM_CANVAS_H) {
+      canvas.width = WAVEFORM_CANVAS_W;
+      canvas.height = WAVEFORM_CANVAS_H;
     }
 
     const ctx2d = canvas.getContext("2d");
-    ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx2d.clearRect(0, 0, cssWidth, cssHeight);
+    ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+    ctx2d.clearRect(0, 0, WAVEFORM_CANVAS_W, WAVEFORM_CANVAS_H);
 
     // Both the highlight fill and the divider lines snap to this same
-    // integer-pixel grid. Using raw (unrounded) fractions for the fill and
-    // a separately-rounded position for the divider left a 0-1px seam of
-    // bare canvas background peeking out right next to each divider - a
-    // thin gap that read as "two lines" instead of one. Sharing one
-    // rounding function makes the fill's edge and the divider's position
-    // land on the exact same pixel, every time.
-    const quarterX = (i) => Math.round((i / 4) * cssWidth);
+    // integer-pixel grid, so the fill's edge and the divider's position
+    // always land on the exact same pixel (no 0-1px seam between them).
+    const quarterX = (i) => Math.round((i / 4) * WAVEFORM_CANVAS_W);
 
     // Per-lane highlight: which quarter (0-3) is currently assigned to that
     // lane, lit proportional to the lane's live envelope gain (computed
@@ -527,7 +528,7 @@ class Player {
       const x0 = quarterX(contentIndex);
       const x1 = quarterX(contentIndex + 1);
       ctx2d.fillStyle = `rgba(62, 207, 110, ${(0.12 + 0.5 * gain).toFixed(3)})`;
-      ctx2d.fillRect(x0, 0, Math.max(1, x1 - x0), cssHeight);
+      ctx2d.fillRect(x0, 0, Math.max(1, x1 - x0), WAVEFORM_CANVAS_H);
     }
 
     if (this.els.gainDebug) {
@@ -536,7 +537,7 @@ class Player {
 
     // Base waveform line.
     const { min, max } = this.waveformPeaks;
-    const mid = cssHeight / 2;
+    const mid = WAVEFORM_CANVAS_H / 2;
     ctx2d.strokeStyle = "#eef0f1";
     ctx2d.lineWidth = 1;
     ctx2d.beginPath();
@@ -555,7 +556,7 @@ class Player {
     for (let i = 1; i < 4; i++) {
       const x = quarterX(i) + 0.5;
       ctx2d.moveTo(x, 0);
-      ctx2d.lineTo(x, cssHeight);
+      ctx2d.lineTo(x, WAVEFORM_CANVAS_H);
     }
     ctx2d.stroke();
   }
