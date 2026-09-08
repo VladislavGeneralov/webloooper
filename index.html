@@ -404,19 +404,28 @@
     }
 
     /* Keep the exact same 2-column desktop grid at every viewport width -
-       never restructure to a single column - and instead shrink the whole
-       thing uniformly to fit narrow phones. `zoom` (not `transform:scale`)
-       is the right tool here: unlike transform, it actually affects the
-       box's contribution to layout/flow, so there's no leftover blank
-       space where the pre-scale box used to be - the grid's natural
-       502px width (2 x 244px cards + 14px gap) genuinely shrinks.
-       502px is .players' own width; the 20px accounts for body's own
-       left+right padding so the full 522px card-plus-chrome fits exactly
-       at that breakpoint (zoom 1 right at/above it). */
-    @media (max-width: 522px) {
-      .players {
-        zoom: calc((100vw - 20px) / 502px);
-      }
+       never restructure to a single column - instead shrink the whole
+       thing uniformly to fit narrow phones, via JS (see fitPlayersToViewport
+       in main.js). CSS `zoom` was tried first (it, unlike transform,
+       shrinks the box's own contribution to layout, so no leftover blank
+       space) but its browser support is inconsistent - confirmed broken
+       on iOS Safari in the field (cards rendered full-size, unscaled,
+       overflowing the screen). transform:scale has universal support;
+       #players-wrap's width/height get set in JS to match the scaled
+       size, since transform alone doesn't shrink the layout box. */
+    #players-wrap {
+      overflow: hidden;
+      /* body is display:flex, and flex items default to flex-shrink:1 -
+         which compresses this below its explicit width (even
+         width:max-content, set in JS during measurement) to fit body's
+         available space, regardless of the width property. Without this,
+         fitPlayersToViewport() in main.js always measured the ALREADY-
+         shrunk width instead of #players' true natural 2-column size. */
+      flex-shrink: 0;
+    }
+
+    .players {
+      transform-origin: top center;
     }
 
   </style>
@@ -476,7 +485,9 @@
     </div>
   </template>
 
-  <div id="players" class="players"></div>
+  <div id="players-wrap">
+    <div id="players" class="players"></div>
+  </div>
 
   <script src="main.js"></script>
 
