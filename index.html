@@ -147,7 +147,14 @@
       display: grid;
       grid-template-columns: var(--left-col) var(--right-col);
       gap: var(--card-gap);
-      padding: var(--card-pad);
+      /* Left/right padding shifted (same total as before, just
+         redistributed) - the left column centers its round rec button/
+         knob within --left-col, which is wider than either, leaving
+         visible slack there; the right column's fader pair fills
+         --right-col exactly with no slack. Left edge ends up with much
+         more breathing room than the right, so a few px move from the
+         left side to the right to balance it. */
+      padding: var(--card-pad) calc(var(--card-pad) + 6px) var(--card-pad) calc(var(--card-pad) - 6px);
       border: 1px solid var(--black);
       background: var(--panel-gradient);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 16px 40px rgba(0, 0, 0, 0.5);
