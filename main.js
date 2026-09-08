@@ -221,6 +221,17 @@ class Player {
       }
     });
 
+    // MediaRecorder can only record a MediaStream, not a Web Audio node, so
+    // the 2x input boost has to happen via a real audio-graph detour: mic ->
+    // GainNode(2) -> MediaStreamDestination, then MediaRecorder records
+    // *that* stream instead of the raw mic stream.
+    this.micSource = ctx.createMediaStreamSource(this.micStream);
+    this.inputGain = ctx.createGain();
+    this.inputGain.gain.value = 2;
+    this.micSource.connect(this.inputGain);
+    this.micDestination = ctx.createMediaStreamDestination();
+    this.inputGain.connect(this.micDestination);
+
     this.outputGain = ctx.createGain();
     this.outputGain.gain.value = 1;
     this.outputGain.connect(masterMix);
@@ -347,7 +358,7 @@ class Player {
 
     this.clearWaveform();
 
-    this.mediaRecorder = new MediaRecorder(this.micStream);
+    this.mediaRecorder = new MediaRecorder(this.micDestination.stream);
     this.setRecordingUI("recording");
     this.recordingStartedAt = performance.now();
     this.els.durationLabel.textContent = "Recording: 0.0s";

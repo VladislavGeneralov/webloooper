@@ -365,11 +365,21 @@
       height: var(--fader-h);
     }
 
+    /* Native range inputs clamp the thumb fully inside the track (thumb's
+       outer edge reaches the track end, thumb's CENTER - and our grip
+       line, which sits at the thumb's center - stops half a thumb-width
+       short of it). Measured on a real render: thumb edge sat flush with
+       the wrapper's edge while the grip line was inset by exactly
+       thumb-w/2. Widening the input by --thumb-w (split evenly by the
+       existing centered translate(-50%,-50%)) shifts the thumb's
+       reachable center range to exactly [0, --fader-h] in the wrapper's
+       own coordinates, so the line - not the cap - reaches the end,
+       same as a real fader where the cap overhangs the groove slightly. */
     .mixer-fader-track input[type="range"] {
       position: absolute;
       top: 50%;
       left: 50%;
-      width: var(--fader-h);
+      width: calc(var(--fader-h) + var(--thumb-w));
       height: var(--fader-w);
       margin: 0;
       transform: translate(-50%, -50%) rotate(-90deg);
