@@ -1,0 +1,4 @@
+node_modules/
+test-signal.wav
+captured-output.f32
+*.log

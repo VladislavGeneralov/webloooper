@@ -1,0 +1,16 @@
+{
+  "name": "webloooper-audiotest",
+  "version": "1.0.0",
+  "description": "Real end-to-end amplitude-discontinuity regression test for webloooper - see README.md",
+  "private": true,
+  "scripts": {
+    "generate": "node make_test_wav.js",
+    "test": "node run_test.js ../..",
+    "analyze": "node analyze.js"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "puppeteer-core": "^25.10.0"
+  }
+}
