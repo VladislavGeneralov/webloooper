@@ -227,18 +227,21 @@
     }
 
     /* Vertical mixer fader: a normal horizontal <input type=range> rotated
-       -90deg inside a fixed-size wrapper, same trick as NEWRACK's mixer. */
+       -90deg inside a fixed-size wrapper, same trick as NEWRACK's mixer.
+       Height (192px) is picked so the "Orig"/"Low" labels underneath land
+       at the same vertical position as "Rev prob" at the bottom of the
+       left column (rec-group + shuffle + knob-group stack). */
     .mixer-fader-track {
       position: relative;
       width: 40px;
-      height: 180px;
+      height: 192px;
     }
 
     .mixer-fader-track input[type="range"] {
       position: absolute;
       top: 50%;
       left: 50%;
-      width: 180px;
+      width: 192px;
       height: 40px;
       margin: 0;
       transform: translate(-50%, -50%) rotate(-90deg);
