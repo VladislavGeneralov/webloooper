@@ -61,6 +61,7 @@
        a single stacked column. */
     .controls {
       width: fit-content;
+      min-width: 0;
       display: grid;
       grid-template-columns: 96px max-content;
       gap: 14px;
@@ -81,9 +82,17 @@
       color: var(--ink-muted);
     }
 
-    /* Waveform display: recessed dark "screen" set into the metal panel. */
+    /* Waveform display: recessed dark "screen" set into the metal panel.
+       min-width:0 overrides the grid item's default min-width:auto (which
+       floors it at its content's intrinsic size) - without it, the canvas'
+       intrinsic pixel buffer (set in JS to cssWidth*devicePixelRatio, which
+       can be 300-450px+ on a high-DPI phone) forces this whole column - and
+       every ancestor up to .controls - to grow to fit it, instead of the
+       canvas shrinking to fit the column via width:100% like it's supposed
+       to. */
     .waveform-panel {
       grid-column: 1 / -1;
+      min-width: 0;
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -92,6 +101,7 @@
     canvas.waveform {
       display: block;
       width: 100%;
+      max-width: 100%;
       height: 56px;
       background: var(--groove);
       border: 1px solid var(--black);
