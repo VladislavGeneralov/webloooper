@@ -170,16 +170,23 @@ class Player {
       }
     };
 
+    // Displayed % is relative to the fader's own top (max), not to unity
+    // gain - the top of the fader always reads "100%" even though the
+    // real audio gain there is 8x/800% (the actual usable ceiling, fine
+    // sound-wise). The user isn't meant to know/care about the raw gain
+    // scale - the fader's own travel is the whole story: middle = 50%.
     this.els.volumeOriginal.oninput = (e) => {
       const v = parseFloat(e.target.value);
+      const max = parseFloat(e.target.max);
       if (this.originalVolumeGain) this.originalVolumeGain.gain.value = v;
-      if (this.els.volumeOriginalValue) this.els.volumeOriginalValue.textContent = `${Math.round(v * 100)}%`;
+      if (this.els.volumeOriginalValue) this.els.volumeOriginalValue.textContent = `${Math.round((v / max) * 100)}%`;
     };
 
     this.els.volumeOctave.oninput = (e) => {
       const v = parseFloat(e.target.value);
+      const max = parseFloat(e.target.max);
       if (this.octaveVolumeGain) this.octaveVolumeGain.gain.value = v;
-      if (this.els.volumeOctaveValue) this.els.volumeOctaveValue.textContent = `${Math.round(v * 100)}%`;
+      if (this.els.volumeOctaveValue) this.els.volumeOctaveValue.textContent = `${Math.round((v / max) * 100)}%`;
     };
 
     this.els.shuffle.onclick = () => {

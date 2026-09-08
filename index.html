@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Loooooper</title>
 
   <style>
@@ -32,6 +32,7 @@
 
     * {
       box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
     }
 
     body {
@@ -45,6 +46,17 @@
       align-items: flex-start;
       overflow-x: hidden;
       padding: 20px 10px;
+      /* Kiosk-style lockdown (same convention as kladmineralovweb/SCDJ):
+         no pinch-zoom, no swipe-back/overscroll bounce, no page panning,
+         no accidental text selection or long-press callouts while playing
+         on a phone. Interactive controls (knob, faders) still work - they
+         handle their own drag via pointer events / native slider behavior,
+         which isn't blocked by this. */
+      overscroll-behavior: none;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
 
     .players {
@@ -245,6 +257,7 @@
       height: 40px;
       margin: 0;
       transform: translate(-50%, -50%) rotate(-90deg);
+      touch-action: none;
     }
 
     /* Round toggle button (shuffle): dark housing always stays dark - only
@@ -435,7 +448,7 @@
         <div class="fader-row">
           <div class="fader-col">
             <div class="mixer-fader-track">
-              <input data-role="volumeOriginal" type="range" min="0" max="8" step="0.01" value="0.5" />
+              <input data-role="volumeOriginal" type="range" min="0" max="8" step="0.01" value="4" />
             </div>
             <div class="knob-label">Orig</div>
             <span class="knob-value" data-role="volumeOriginalValue">50%</span>
