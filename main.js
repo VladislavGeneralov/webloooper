@@ -334,6 +334,8 @@ class Player {
     this.chunks = [];
     this.buffers = [];
 
+    this.clearWaveform();
+
     this.mediaRecorder = new MediaRecorder(this.micStream);
     this.setRecordingUI("recording");
     this.recordingStartedAt = performance.now();
@@ -445,6 +447,26 @@ class Player {
   // -------------------------
   // WAVEFORM DISPLAY
   // -------------------------
+  // Wipes the canvas and drops the previous recording's peaks/highlight
+  // state - called when a new recording starts, so the old waveform
+  // doesn't linger on screen while the new one is being captured.
+  clearWaveform() {
+    this.waveformPeaks = null;
+    this.currentLaneContent = [null, null, null, null];
+
+    const canvas = this.els.waveform;
+    if (canvas) {
+      const ctx2d = canvas.getContext("2d");
+      ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+      ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    if (this.els.gainDebug) {
+      const spans = this.els.gainDebug.children;
+      for (let i = 0; i < spans.length; i++) spans[i].textContent = "";
+    }
+  }
+
   // Fixed internal resolution, deliberately decoupled from any live layout
   // measurement (canvas.clientWidth, devicePixelRatio). CSS alone scales
   // the finished bitmap down to whatever the container's actual size is.
