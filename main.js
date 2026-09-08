@@ -890,8 +890,15 @@ function fitPlayersToViewport() {
   const availableWidth = window.innerWidth
     - parseFloat(bodyStyle.paddingLeft || 0)
     - parseFloat(bodyStyle.paddingRight || 0);
+  const availableHeight = window.innerHeight
+    - parseFloat(bodyStyle.paddingTop || 0)
+    - parseFloat(bodyStyle.paddingBottom || 0);
 
-  const scale = Math.min(1, availableWidth / naturalWidth);
+  // Constrained by whichever dimension is tighter, so the grid never
+  // overflows either axis (cards are already sized to need little/no
+  // scaling on common phones - this just covers unusually short viewports
+  // too, e.g. with a lot of browser chrome eating vertical space).
+  const scale = Math.min(1, availableWidth / naturalWidth, availableHeight / naturalHeight);
 
   container.style.transform = scale < 1 ? `scale(${scale})` : "none";
   wrap.style.width = `${naturalWidth * scale}px`;

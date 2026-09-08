@@ -69,7 +69,7 @@
     .players {
       display: grid;
       grid-template-columns: repeat(2, min-content);
-      gap: 14px;
+      gap: 10px;
       justify-content: center;
     }
 
@@ -77,14 +77,18 @@
        left column stacks rec/shuffle/reverse, right column holds the
        fader pair - just both columns tightened up so the whole card (and
        the waveform above it) is narrower than before, not collapsed into
-       a single stacked column. */
+       a single stacked column. Sized so 2 cards fit a ~375px phone
+       natively (no/minimal transform:scale needed) - scaling the whole
+       already-wide card down uniformly (the previous approach) shrinks
+       height along with width, leaving unused space below instead of
+       using the phone's actual screen height. */
     .controls {
       width: fit-content;
       min-width: 0;
       display: grid;
-      grid-template-columns: 96px max-content;
-      gap: 14px;
-      padding: 16px;
+      grid-template-columns: 76px max-content;
+      gap: 10px;
+      padding: 10px;
       border: 1px solid var(--black);
       background: var(--panel-gradient);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 16px 40px rgba(0, 0, 0, 0.5);
@@ -155,7 +159,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: flex-start;
-      gap: 20px;
+      gap: 14px;
       padding-top: 4px;
     }
 
@@ -226,7 +230,7 @@
 
     .fader-row {
       display: flex;
-      gap: 22px;
+      gap: 14px;
       justify-content: center;
     }
 
@@ -247,21 +251,22 @@
 
     /* Vertical mixer fader: a normal horizontal <input type=range> rotated
        -90deg inside a fixed-size wrapper, same trick as NEWRACK's mixer.
-       Height (192px) is picked so the "Orig"/"Low" labels underneath land
+       Height (172px) is picked so the "Orig"/"Low" labels underneath land
        at the same vertical position as "Rev prob" at the bottom of the
-       left column (rec-group + shuffle + knob-group stack). */
+       left column (rec-group + shuffle + knob-group stack) - recomputed
+       for the smaller knob/gaps below. */
     .mixer-fader-track {
       position: relative;
-      width: 40px;
-      height: 192px;
+      width: 32px;
+      height: 172px;
     }
 
     .mixer-fader-track input[type="range"] {
       position: absolute;
       top: 50%;
       left: 50%;
-      width: 192px;
-      height: 40px;
+      width: 172px;
+      height: 32px;
       margin: 0;
       transform: translate(-50%, -50%) rotate(-90deg);
       touch-action: none;
@@ -311,8 +316,8 @@
     }
 
     .knob {
-      width: 48px;
-      height: 48px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
       position: relative;
       cursor: ns-resize;
@@ -326,11 +331,11 @@
       content: "";
       position: absolute;
       left: 50%;
-      top: 5px;
+      top: 4px;
       width: 4px;
-      height: 16px;
+      height: 13px;
       background: var(--metal-hi);
-      transform-origin: 50% 19px;
+      transform-origin: 50% 16px;
       transform: translateX(-50%) rotate(var(--deg, -135deg));
     }
 
@@ -369,9 +374,9 @@
     input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
-      width: 24px;
-      height: 44px;
-      margin-top: -18px;
+      width: 20px;
+      height: 36px;
+      margin-top: -14px;
       background:
         linear-gradient(180deg, transparent 44%, var(--metal-hi) 44%, var(--metal-hi) 56%, transparent 56%),
         linear-gradient(180deg, var(--black2), var(--black));
@@ -381,8 +386,8 @@
     }
 
     input[type="range"]::-moz-range-thumb {
-      width: 24px;
-      height: 44px;
+      width: 20px;
+      height: 36px;
       background:
         linear-gradient(180deg, transparent 44%, var(--metal-hi) 44%, var(--metal-hi) 56%, transparent 56%),
         linear-gradient(180deg, var(--black2), var(--black));
