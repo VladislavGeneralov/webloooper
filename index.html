@@ -31,24 +31,41 @@
 
       /* Mobile-first sizing (same convention as kladminweb: small/compact
          values are the default, a min-width media query below scales them
-         up for desktop - not the other way around). These are hand-picked
-         so a 2-column, 2-row grid of 4 cards fits a 375x667 phone with no
-         scaling and no scroll (see the .controls/.mixer-fader-track height
-         comment below for the alignment math). */
+         up for desktop - not the other way around). The lever here is
+         control SIZE, not the space between controls: --left-panel-gap,
+         --fader-row-gap, --rec-group-gap, --tiny-gap and --panel-gap (the
+         gaps that read as "air" around/between knobs and faders) are the
+         same at every width, on purpose - first mobile pass shrank gaps
+         harder than the controls themselves, which fit the screen but
+         looked cramped instead of just smaller. Knob/fader/button sizes
+         shrink instead; the breathing room stays constant. */
+      --left-panel-gap: 14px;
+      --fader-row-gap: 14px;
+      --rec-group-gap: 8px;
+      --tiny-gap: 4px;
+      --panel-gap: 6px;
+      --toggle-dot: 5px;
+
       --card-pad: 8px;
       --card-gap: 8px;
-      --left-col: 66px;
-      --left-panel-gap: 10px;
-      --fader-w: 28px;
-      --fader-h: 145px;
-      --fader-row-gap: 10px;
-      --waveform-h: 48px;
-      --knob-size: 34px;
-      --rec-btn: 40px;
-      --rec-led: 11px;
-      --toggle-size: 15px;
-      --toggle-dot: 5px;
+      --left-col: 60px;
+      --fader-w: 24px;
+      --fader-h: 144px;
+      --waveform-h: 42px;
+      --knob-size: 30px;
+      --rec-btn: 38px;
+      --rec-led: 10px;
+      --toggle-size: 13px;
       --players-gap: 8px;
+
+      /* Right (fader) column width and overall card width, computed from
+         the sizes above instead of measured from rendered content - grid
+         `max-content` columns depend on the browser inferring an
+         intrinsic size, which is exactly the kind of computed sizing
+         that kept mismatching between Chrome and real Safari all
+         session. calc() from known values is deterministic instead. */
+      --right-col: calc(var(--fader-w) * 2 + var(--fader-row-gap));
+      --card-w: calc(var(--card-pad) * 2 + var(--left-col) + var(--card-gap) + var(--right-col));
     }
 
     @media (min-width: 560px) {
@@ -56,16 +73,13 @@
         --card-pad: 10px;
         --card-gap: 10px;
         --left-col: 76px;
-        --left-panel-gap: 14px;
         --fader-w: 32px;
         --fader-h: 172px;
-        --fader-row-gap: 14px;
         --waveform-h: 56px;
         --knob-size: 40px;
         --rec-btn: 48px;
         --rec-led: 13px;
         --toggle-size: 17px;
-        --toggle-dot: 5px;
         --players-gap: 10px;
       }
     }
@@ -114,18 +128,24 @@
          unusually narrow viewports, not the primary mobile strategy. */
       width: 100%;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
+      grid-template-columns: repeat(auto-fit, var(--card-w));
       gap: var(--players-gap);
       justify-content: center;
     }
 
     /* Two-column split inside each card: left column stacks
-       rec/shuffle/reverse, right column holds the fader pair. */
+       rec/shuffle/reverse, right column holds the fader pair. Both track
+       widths are explicit (var(--left-col), var(--right-col)) rather than
+       max-content, so the card's real width always matches --card-w
+       exactly - a max-content column measures the row's tallest/widest
+       *content*, and on real Safari that measurement came out wider than
+       intended (rotated range input, knob pointer, etc.), overflowing the
+       fixed-width card and throwing off centering/spacing between cards. */
     .controls {
-      width: fit-content;
+      width: var(--card-w);
       min-width: 0;
       display: grid;
-      grid-template-columns: var(--left-col) max-content;
+      grid-template-columns: var(--left-col) var(--right-col);
       gap: var(--card-gap);
       padding: var(--card-pad);
       border: 1px solid var(--black);
@@ -157,7 +177,7 @@
       min-width: 0;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: var(--panel-gap);
     }
 
     canvas.waveform {
@@ -203,7 +223,8 @@
     }
 
     .right-panel {
-      width: max-content;
+      width: 100%;
+      min-width: 0;
       display: flex;
       flex-direction: column;
       justify-content: flex-start;
@@ -214,7 +235,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
+      gap: var(--rec-group-gap);
     }
 
     .rack-btn {
@@ -277,7 +298,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 4px;
+      gap: var(--tiny-gap);
     }
 
     .knob-label {
@@ -350,7 +371,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 4px;
+      gap: var(--tiny-gap);
     }
 
     .knob {
@@ -369,11 +390,11 @@
       content: "";
       position: absolute;
       left: 50%;
-      top: 4px;
+      top: calc(var(--knob-size) * 0.1);
       width: 4px;
-      height: 13px;
+      height: calc(var(--knob-size) * 0.325);
       background: var(--metal-hi);
-      transform-origin: 50% 16px;
+      transform-origin: 50% calc(var(--knob-size) * 0.4);
       transform: translateX(-50%) rotate(var(--deg, -135deg));
     }
 
