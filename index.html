@@ -28,6 +28,46 @@
       --rec-red: #b23327;
       --rec-amber: #b28a27;
       --led-green: #3ecf6e;
+
+      /* Mobile-first sizing (same convention as kladminweb: small/compact
+         values are the default, a min-width media query below scales them
+         up for desktop - not the other way around). These are hand-picked
+         so a 2-column, 2-row grid of 4 cards fits a 375x667 phone with no
+         scaling and no scroll (see the .controls/.mixer-fader-track height
+         comment below for the alignment math). */
+      --card-pad: 8px;
+      --card-gap: 8px;
+      --left-col: 66px;
+      --left-panel-gap: 10px;
+      --fader-w: 28px;
+      --fader-h: 145px;
+      --fader-row-gap: 10px;
+      --waveform-h: 48px;
+      --knob-size: 34px;
+      --rec-btn: 40px;
+      --rec-led: 11px;
+      --toggle-size: 15px;
+      --toggle-dot: 5px;
+      --players-gap: 8px;
+    }
+
+    @media (min-width: 560px) {
+      :root {
+        --card-pad: 10px;
+        --card-gap: 10px;
+        --left-col: 76px;
+        --left-panel-gap: 14px;
+        --fader-w: 32px;
+        --fader-h: 172px;
+        --fader-row-gap: 14px;
+        --waveform-h: 56px;
+        --knob-size: 40px;
+        --rec-btn: 48px;
+        --rec-led: 13px;
+        --toggle-size: 17px;
+        --toggle-dot: 5px;
+        --players-gap: 10px;
+      }
     }
 
     * {
@@ -68,24 +108,26 @@
       /* auto-fit only resolves to more than 1 track when the grid has a
          definite width to measure against - body is normal block flow
          (not flex), so this 100% resolves against its definite content
-         width instead of an indefinite shrink-to-fit size. */
+         width instead of an indefinite shrink-to-fit size. Cards are sized
+         (via the --card-* variables above) to comfortably fit 2 columns
+         at any real phone width, so auto-fit here is just a safety net for
+         unusually narrow viewports, not the primary mobile strategy. */
       width: 100%;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(184px, max-content));
-      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(140px, max-content));
+      gap: var(--players-gap);
       justify-content: center;
     }
 
-    /* Narrower portrait card, keeping the original two-column split inside
-       each card: left column stacks rec/shuffle/reverse, right column
-       holds the fader pair. */
+    /* Two-column split inside each card: left column stacks
+       rec/shuffle/reverse, right column holds the fader pair. */
     .controls {
       width: fit-content;
       min-width: 0;
       display: grid;
-      grid-template-columns: 76px max-content;
-      gap: 10px;
-      padding: 10px;
+      grid-template-columns: var(--left-col) max-content;
+      gap: var(--card-gap);
+      padding: var(--card-pad);
       border: 1px solid var(--black);
       background: var(--panel-gradient);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 16px 40px rgba(0, 0, 0, 0.5);
@@ -122,7 +164,7 @@
       display: block;
       width: 100%;
       max-width: 100%;
-      height: 56px;
+      height: var(--waveform-h);
       background: var(--groove);
       border: 1px solid var(--black);
     }
@@ -156,7 +198,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: flex-start;
-      gap: 14px;
+      gap: var(--left-panel-gap);
       padding-top: 4px;
     }
 
@@ -198,8 +240,8 @@
     /* Single round transport button - text swaps Rec/Stop/... instead of
        two separate buttons. Round like a real hardware transport button. */
     .rack-btn-round {
-      width: 48px;
-      height: 48px;
+      width: var(--rec-btn);
+      height: var(--rec-btn);
       min-width: 0;
       padding: 0;
       border-radius: 50%;
@@ -209,8 +251,8 @@
     /* REC LED: flat lit/unlit color swap, no glow halo. */
     .rec-led {
       display: inline-block;
-      width: 13px;
-      height: 13px;
+      width: var(--rec-led);
+      height: var(--rec-led);
       border-radius: 50%;
       background: linear-gradient(180deg, var(--black2), var(--black));
       border: 1px solid var(--black);
@@ -227,7 +269,7 @@
 
     .fader-row {
       display: flex;
-      gap: 14px;
+      gap: var(--fader-row-gap);
       justify-content: center;
     }
 
@@ -248,22 +290,21 @@
 
     /* Vertical mixer fader: a normal horizontal <input type=range> rotated
        -90deg inside a fixed-size wrapper, same trick as NEWRACK's mixer.
-       Height (172px) is picked so the "Orig"/"Low" labels underneath land
-       at the same vertical position as "Rev prob" at the bottom of the
-       left column (rec-group + shuffle + knob-group stack) - recomputed
-       for the smaller knob/gaps below. */
+       --fader-h is picked (at each breakpoint) so the "Orig"/"Low" labels
+       underneath land at the same vertical position as "Rev prob" at the
+       bottom of the left column (rec-group + shuffle + knob-group stack). */
     .mixer-fader-track {
       position: relative;
-      width: 32px;
-      height: 172px;
+      width: var(--fader-w);
+      height: var(--fader-h);
     }
 
     .mixer-fader-track input[type="range"] {
       position: absolute;
       top: 50%;
       left: 50%;
-      width: 172px;
-      height: 32px;
+      width: var(--fader-h);
+      height: var(--fader-w);
       margin: 0;
       transform: translate(-50%, -50%) rotate(-90deg);
       touch-action: none;
@@ -278,8 +319,8 @@
        on a whole pixel each side either way - flex centering just avoids
        relying on subpixel math to get there. */
     .mixer-toggle {
-      width: 17px;
-      height: 17px;
+      width: var(--toggle-size);
+      height: var(--toggle-size);
       border-radius: 50%;
       border: 1px solid var(--black);
       background: linear-gradient(180deg, var(--black2), var(--black));
@@ -293,8 +334,8 @@
 
     .mixer-toggle::after {
       content: "";
-      width: 5px;
-      height: 5px;
+      width: var(--toggle-dot);
+      height: var(--toggle-dot);
       border-radius: 50%;
       background: var(--black2);
     }
@@ -313,8 +354,8 @@
     }
 
     .knob {
-      width: 40px;
-      height: 40px;
+      width: var(--knob-size);
+      height: var(--knob-size);
       border-radius: 50%;
       position: relative;
       cursor: ns-resize;
