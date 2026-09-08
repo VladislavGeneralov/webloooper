@@ -354,6 +354,18 @@
       text-align: center;
     }
 
+    /* --fader-h was shrunk by exactly thumb-w/2 so the cap's overhang at
+       the extremes (see .mixer-fader-track input[type=range] above)
+       lands where the cap's edge used to sit before that overhang was
+       added, instead of reaching further down into this label. That
+       shrink also pulled the label itself up by the same amount (it
+       follows the now-shorter wrapper in normal flow) - this margin
+       pushes it back down by that same thumb-w/2, so its position ends
+       up exactly where it was originally, unaffected by either change. */
+    .fader-col > .knob-label {
+      margin-top: calc(var(--thumb-w) / 2);
+    }
+
     /* Vertical mixer fader: a normal horizontal <input type=range> rotated
        -90deg inside a fixed-size wrapper, same trick as NEWRACK's mixer.
        --fader-h is picked (at each breakpoint) so the "Orig"/"Low" labels
@@ -365,16 +377,38 @@
       height: var(--fader-h);
     }
 
-    /* Native range inputs clamp the thumb fully inside the track (thumb's
-       outer edge reaches the track end, thumb's CENTER - and our grip
-       line, which sits at the thumb's center - stops half a thumb-width
-       short of it). Measured on a real render: thumb edge sat flush with
-       the wrapper's edge while the grip line was inset by exactly
-       thumb-w/2. Widening the input by --thumb-w (split evenly by the
-       existing centered translate(-50%,-50%)) shifts the thumb's
-       reachable center range to exactly [0, --fader-h] in the wrapper's
-       own coordinates, so the line - not the cap - reaches the end,
-       same as a real fader where the cap overhangs the groove slightly. */
+    /* The visible groove is a plain, non-rotated div - NOT the native
+       ::-webkit-slider-runnable-track. Chrome silently ignores an
+       explicit `width` on that pseudo-element (verified on a real
+       render: setting it to --fader-h did nothing, the track kept
+       painting at the full width of whatever the input's own box was) -
+       there's no reliable way to decouple the native track's rendered
+       length from the input's own size. This div is a real DOM node, so
+       its size is exactly --track-h x 100% of the wrapper, period,
+       regardless of what the (now-hidden) native track does. */
+    .fader-groove {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: var(--track-h);
+      height: 100%;
+      background: repeating-linear-gradient(180deg, var(--groove), var(--groove) 2px, transparent 2px, transparent 10px), var(--groove);
+      border: 1px solid var(--black);
+      pointer-events: none;
+    }
+
+    /* This <input> is position:absolute, out of flow - its size never
+       affects page layout (the .mixer-fader-track wrapper it's centered
+       in stays exactly --fader-w x --fader-h regardless). Widened by
+       --thumb-w (split evenly by the existing centered
+       translate(-50%,-50%)) so the thumb's clamped-inside-the-input
+       center - where the white grip line sits - reaches the wrapper's
+       true edges instead of stopping half a thumb-width short. Its own
+       native track is now invisible (see below) - the groove above is
+       what's actually seen - so widening this has no visual effect on
+       the groove; only the cap (wider than the groove, same as real
+       hardware) paints past the wrapper at the extremes. */
     .mixer-fader-track input[type="range"] {
       position: absolute;
       top: 50%;
@@ -469,16 +503,20 @@
       cursor: pointer;
     }
 
+    /* Invisible - the real, visible groove is .fader-groove (a plain div
+       decoupled from the input's own size). This native track still has
+       to exist with the right height, since the thumb's margin-top is
+       computed relative to it (see --thumb-margin), just not painted. */
     input[type="range"]::-webkit-slider-runnable-track {
       height: var(--track-h);
-      background: repeating-linear-gradient(90deg, var(--groove), var(--groove) 2px, transparent 2px, transparent 10px), var(--groove);
-      border: 1px solid var(--black);
+      background: transparent;
+      border: none;
     }
 
     input[type="range"]::-moz-range-track {
       height: var(--track-h);
-      background: var(--groove);
-      border: 1px solid var(--black);
+      background: transparent;
+      border: none;
     }
 
     /* Fader cap: long axis perpendicular to travel, like a real fader cap.
@@ -561,6 +599,7 @@
         <div class="fader-row">
           <div class="fader-col">
             <div class="mixer-fader-track">
+              <div class="fader-groove"></div>
               <input data-role="volumeOriginal" type="range" min="0" max="8" step="0.01" value="4" />
             </div>
             <div class="knob-label">Orig</div>
@@ -569,6 +608,7 @@
 
           <div class="fader-col">
             <div class="mixer-fader-track">
+              <div class="fader-groove"></div>
               <input data-role="volumeOctave" type="range" min="0" max="8" step="0.01" value="0" />
             </div>
             <div class="knob-label">Low</div>
