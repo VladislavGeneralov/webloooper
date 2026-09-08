@@ -88,6 +88,7 @@ class Player {
     this.mediaRecorder = null;
     this.chunks = [];
     this.recordingTimeout = null;
+    this.recordingStartedAt = null;
 
     // Original-layer and octave-down-layer each get their own per-lane
     // envelope gain (identical fade timing, scheduled together) feeding
@@ -335,6 +336,8 @@ class Player {
 
     this.mediaRecorder = new MediaRecorder(this.micStream);
     this.setRecordingUI("recording");
+    this.recordingStartedAt = performance.now();
+    this.els.durationLabel.textContent = "Recording: 0.0s";
 
     this.mediaRecorder.ondataavailable = (e) => {
       this.chunks.push(e.data);
@@ -428,6 +431,15 @@ class Player {
       recStop.textContent = "Rec";
       recStop.disabled = false;
     }
+  }
+
+  // Live "Recording: X.Xs" readout, ticking every frame while a recording
+  // is actually in progress - independent of renderWaveform() (which only
+  // runs once there's a previous recording's waveformPeaks to draw).
+  updateRecordingLabel() {
+    if (this.mediaRecorder?.state !== "recording" || this.recordingStartedAt == null) return;
+    const elapsed = (performance.now() - this.recordingStartedAt) / 1000;
+    this.els.durationLabel.textContent = `Recording: ${elapsed.toFixed(1)}s`;
   }
 
   // -------------------------
@@ -823,6 +835,7 @@ function rafLoop() {
     players.forEach((p) => p.tick(now));
   }
   players.forEach((p) => p.renderWaveform());
+  players.forEach((p) => p.updateRecordingLabel());
   requestAnimationFrame(rafLoop);
 }
 
