@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Loooooper</title>
+
+  <style>
+    /* Rack-module skin borrowed from NEWRACK (brushed-aluminum panels on a
+       black chassis, flat rectangular controls, no glow/rounded corners -
+       LED state changes are flat color swaps only). */
+    :root {
+      color-scheme: dark;
+
+      --metal-hi: #eef0f1;
+      --metal: #cacccf;
+      --metal-low: #94969a;
+      --panel-gradient: linear-gradient(180deg, var(--metal-hi) 0%, var(--metal) 45%, var(--metal-low) 100%);
+
+      --black: #0d0d0e;
+      --black2: #1c1d1f;
+      --groove: #141416;
+
+      --ink: #26282c;
+      --ink-muted: #61656b;
+      --text: #d8dadf;
+
+      --rec-red: #b23327;
+      --rec-amber: #b28a27;
+      --led-green: #3ecf6e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: var(--black);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      overflow-x: hidden;
+      padding: 20px 10px;
+    }
+
+    .players {
+      display: grid;
+      grid-template-columns: repeat(2, min-content);
+      gap: 14px;
+      justify-content: center;
+    }
+
+    /* Narrower portrait card, but keeping the original two-column split:
+       left column stacks rec/shuffle/reverse, right column holds the
+       fader pair - just both columns tightened up so the whole card (and
+       the waveform above it) is narrower than before, not collapsed into
+       a single stacked column. */
+    .controls {
+      width: fit-content;
+      display: grid;
+      grid-template-columns: 96px max-content;
+      gap: 14px;
+      padding: 16px;
+      border: 1px solid var(--black);
+      background: var(--panel-gradient);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 16px 40px rgba(0, 0, 0, 0.5);
+      color: var(--ink);
+      align-items: start;
+    }
+
+    .player-title {
+      grid-column: 1 / -1;
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink-muted);
+    }
+
+    /* Waveform display: recessed dark "screen" set into the metal panel. */
+    .waveform-panel {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    canvas.waveform {
+      display: block;
+      width: 100%;
+      height: 56px;
+      background: var(--groove);
+      border: 1px solid var(--black);
+    }
+
+    .waveform-meta {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--ink-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Live per-lane gain readout - debug aid, kept tiny/unobtrusive. */
+    .gain-debug {
+      font-size: 8px;
+      color: var(--ink-muted);
+      font-variant-numeric: tabular-nums;
+      opacity: 0.7;
+    }
+
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 20px;
+      padding-top: 4px;
+    }
+
+    .right-panel {
+      width: max-content;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      padding-top: 4px;
+    }
+
+    .rec-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .rack-btn {
+      min-width: 56px;
+      height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--black);
+      background: linear-gradient(180deg, var(--black2), var(--black));
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+    }
+
+    .rack-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Single round transport button - text swaps Rec/Stop/... instead of
+       two separate buttons. Round like a real hardware transport button. */
+    .rack-btn-round {
+      width: 48px;
+      height: 48px;
+      min-width: 0;
+      padding: 0;
+      border-radius: 50%;
+      font-size: 10px;
+    }
+
+    /* REC LED: flat lit/unlit color swap, no glow halo. */
+    .rec-led {
+      display: inline-block;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, var(--black2), var(--black));
+      border: 1px solid var(--black);
+      flex-shrink: 0;
+    }
+
+    .rec-led.on {
+      background: var(--rec-red);
+    }
+
+    .rec-led.busy {
+      background: var(--rec-amber);
+    }
+
+    .fader-row {
+      display: flex;
+      gap: 22px;
+      justify-content: center;
+    }
+
+    .fader-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .knob-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--ink-muted);
+      text-align: center;
+    }
+
+    /* Vertical mixer fader: a normal horizontal <input type=range> rotated
+       -90deg inside a fixed-size wrapper, same trick as NEWRACK's mixer. */
+    .mixer-fader-track {
+      position: relative;
+      width: 40px;
+      height: 180px;
+    }
+
+    .mixer-fader-track input[type="range"] {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 180px;
+      height: 40px;
+      margin: 0;
+      transform: translate(-50%, -50%) rotate(-90deg);
+    }
+
+    /* Round toggle button (shuffle): dark when off, flat green LED when on -
+       no checkbox glyphs, matches the rest of the rack's control language. */
+    .mixer-toggle {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 1px solid var(--black);
+      background: linear-gradient(180deg, var(--black2), var(--black));
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+    }
+
+    .mixer-toggle.active {
+      background: var(--led-green);
+    }
+
+    /* Rotary knob (reverse probability) - ported from NEWRACK's makeKnob:
+       vertical-drag-to-turn, --deg rotates the ::after indicator line. */
+    .knob-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .knob {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      position: relative;
+      cursor: ns-resize;
+      touch-action: none;
+      background: radial-gradient(circle at 35% 30%, var(--black2), var(--black) 70%);
+      border: 1px solid var(--black);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, .5);
+    }
+
+    .knob::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 5px;
+      width: 4px;
+      height: 16px;
+      background: var(--metal-hi);
+      transform-origin: 50% 19px;
+      transform: translateX(-50%) rotate(var(--deg, -135deg));
+    }
+
+    .knob-value {
+      font-size: 11px;
+      color: var(--ink-muted);
+      font-variant-numeric: tabular-nums;
+      text-align: center;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 110px;
+      height: 34px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 8px;
+      background: repeating-linear-gradient(90deg, var(--groove), var(--groove) 2px, transparent 2px, transparent 10px), var(--groove);
+      border: 1px solid var(--black);
+    }
+
+    input[type="range"]::-moz-range-track {
+      height: 8px;
+      background: var(--groove);
+      border: 1px solid var(--black);
+    }
+
+    /* Fader cap: long axis perpendicular to travel, like a real fader cap.
+       The .mixer-fader-track ancestor's rotate(-90deg) turns it sideways
+       for the vertical faders; the grip-groove gradient direction is
+       pre-rotated (90deg vs 180deg) so it still reads horizontal afterward. */
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 24px;
+      height: 44px;
+      margin-top: -18px;
+      background:
+        linear-gradient(180deg, transparent 44%, var(--metal-hi) 44%, var(--metal-hi) 56%, transparent 56%),
+        linear-gradient(180deg, var(--black2), var(--black));
+      border: 1px solid var(--black);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, .6);
+      cursor: pointer;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 24px;
+      height: 44px;
+      background:
+        linear-gradient(180deg, transparent 44%, var(--metal-hi) 44%, var(--metal-hi) 56%, transparent 56%),
+        linear-gradient(180deg, var(--black2), var(--black));
+      border: 1px solid var(--black);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, .6);
+      cursor: pointer;
+    }
+
+    .mixer-fader-track input[type="range"]::-webkit-slider-thumb {
+      background:
+        linear-gradient(90deg, transparent 44%, var(--metal-hi) 44%, var(--metal-hi) 56%, transparent 56%),
+        linear-gradient(180deg, var(--black2), var(--black));
+    }
+
+    .mixer-fader-track input[type="range"]::-moz-range-thumb {
+      background:
+        linear-gradient(90deg, transparent 44%, var(--metal-hi) 44%, var(--metal-hi) 56%, transparent 56%),
+        linear-gradient(180deg, var(--black2), var(--black));
+    }
+
+    /* Two cards (each ~96px left column + fader-row right column) plus
+       gaps/padding need roughly 540px side by side - below that, stack to
+       one column so each still-portrait card just fits phone width. */
+    @media (max-width: 540px) {
+      .players {
+        grid-template-columns: 1fr;
+        justify-items: center;
+      }
+    }
+
+  </style>
+</head>
+
+<body>
+
+  <template id="player-template">
+    <div class="controls">
+      <div class="player-title" data-role="player-title"></div>
+
+      <div class="waveform-panel">
+        <canvas class="waveform" data-role="waveform" width="160" height="56"></canvas>
+        <div class="waveform-meta" data-role="durationLabel">NO SIGNAL</div>
+        <div class="gain-debug" data-role="gainDebug"></div>
+      </div>
+
+      <div class="left-panel">
+        <div class="rec-group">
+          <span class="rec-led" data-role="recLed"></span>
+          <button class="rack-btn rack-btn-round" data-role="recStop" type="button">Rec</button>
+        </div>
+
+        <div class="fader-col">
+          <button class="mixer-toggle" data-role="shuffle" type="button"></button>
+          <div class="knob-label">Shuffle</div>
+        </div>
+
+        <div class="knob-group">
+          <div class="knob" data-role="reverseProbabilityKnob"></div>
+          <span class="knob-label">Reverse<br />probability</span>
+          <span class="knob-value"></span>
+        </div>
+      </div>
+
+      <div class="right-panel">
+        <div class="fader-row">
+          <div class="fader-col">
+            <div class="mixer-fader-track">
+              <input data-role="volumeOriginal" type="range" min="0" max="8" step="0.01" value="1" />
+            </div>
+            <div class="knob-label">Orig</div>
+          </div>
+
+          <div class="fader-col">
+            <div class="mixer-fader-track">
+              <input data-role="volumeOctave" type="range" min="0" max="8" step="0.01" value="0" />
+            </div>
+            <div class="knob-label">Low</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <div id="players" class="players"></div>
+
+  <script src="main.js"></script>
+
+</body>
+</html>
