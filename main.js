@@ -137,7 +137,9 @@ class Player {
       recStop: q("recStop"),
       recLed: q("recLed"),
       volumeOriginal: q("volumeOriginal"),
+      volumeOriginalValue: q("volumeOriginalValue"),
       volumeOctave: q("volumeOctave"),
+      volumeOctaveValue: q("volumeOctaveValue"),
       shuffle: q("shuffle"),
       reverseProbabilityKnob: q("reverseProbabilityKnob"),
       title: q("player-title"),
@@ -171,11 +173,13 @@ class Player {
     this.els.volumeOriginal.oninput = (e) => {
       const v = parseFloat(e.target.value);
       if (this.originalVolumeGain) this.originalVolumeGain.gain.value = v;
+      if (this.els.volumeOriginalValue) this.els.volumeOriginalValue.textContent = `${Math.round(v * 100)}%`;
     };
 
     this.els.volumeOctave.oninput = (e) => {
       const v = parseFloat(e.target.value);
       if (this.octaveVolumeGain) this.octaveVolumeGain.gain.value = v;
+      if (this.els.volumeOctaveValue) this.els.volumeOctaveValue.textContent = `${Math.round(v * 100)}%`;
     };
 
     this.els.shuffle.onclick = () => {

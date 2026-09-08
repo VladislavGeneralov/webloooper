@@ -312,7 +312,7 @@
     }
 
     .knob-value {
-      font-size: 11px;
+      font-size: 9px;
       color: var(--ink-muted);
       font-variant-numeric: tabular-nums;
       text-align: center;
@@ -429,9 +429,10 @@
         <div class="fader-row">
           <div class="fader-col">
             <div class="mixer-fader-track">
-              <input data-role="volumeOriginal" type="range" min="0" max="8" step="0.01" value="1" />
+              <input data-role="volumeOriginal" type="range" min="0" max="8" step="0.01" value="0.5" />
             </div>
             <div class="knob-label">Orig</div>
+            <span class="knob-value" data-role="volumeOriginalValue">50%</span>
           </div>
 
           <div class="fader-col">
@@ -439,6 +440,7 @@
               <input data-role="volumeOctave" type="range" min="0" max="8" step="0.01" value="0" />
             </div>
             <div class="knob-label">Low</div>
+            <span class="knob-value" data-role="volumeOctaveValue">0%</span>
           </div>
         </div>
       </div>
