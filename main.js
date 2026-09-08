@@ -99,6 +99,7 @@ class Player {
     this.outputGain = null;
 
     this.Ramp = 0;
+    this.DecayRamp = 0;
     this.speedall = 1;
     this.speedslow = 0.5;
 
@@ -124,16 +125,6 @@ class Player {
     // what's actually audible (1-2 quarters lit at once during a crossfade).
     this.waveformPeaks = null;
     this.currentLaneContent = [null, null, null, null];
-
-    // Per-lane fade state, tracked in JS (not read back from the AudioParam
-    // - the Web Audio spec explicitly allows AudioParam.value reads during
-    // an active automation to NOT reflect the live interpolated value; in
-    // practice this showed up as the visualization sticking mid-ramp and
-    // only snapping when the next discrete setValueAtTime landed. Since we
-    // are the ones scheduling every ramp, we already know its exact
-    // from/to/start/duration - computing the expected value ourselves for
-    // display is both correct and immune to that readback quirk).
-    this.laneFadeState = [null, null, null, null];
 
     this.bindControls();
   }
@@ -257,42 +248,33 @@ class Player {
   // prior fade-out finishes instead of waiting for triggerTime - meaning the
   // new grain's source.start(triggerTime) fires while gain is already
   // partway up, producing an audible click/cut instead of a clean fade.
-  scheduleFade(gainNode, targetValue, triggerTime) {
+  scheduleFade(gainNode, targetValue, triggerTime, duration) {
     const startValue = targetValue === 1 ? 0 : 1;
     gainNode.gain.cancelScheduledValues(triggerTime);
     gainNode.gain.setValueAtTime(startValue, triggerTime);
-    gainNode.gain.linearRampToValueAtTime(targetValue, triggerTime + this.Ramp);
+    gainNode.gain.linearRampToValueAtTime(targetValue, triggerTime + duration);
   }
 
   // Original and octave-down layers share the exact same envelope shape/
   // timing for a given lane - only their downstream volume gain differs.
+  //
+  // Attack uses the full this.Ramp, but decay uses the shorter
+  // this.DecayRamp: the original-layer source's own buffer only contains
+  // L = 2D/(N+1) worth of real audio (D = recording length), which in
+  // step16 units is 8 steps - but fade-out TRIGGERS 6 steps after fade-in
+  // (hardcoded by the macroCounter schedule below) and used to ramp for a
+  // further this.Ramp = 4 steps, finishing at step 10. That's 2 steps
+  // *past* the point the buffer's content actually runs out, so the source
+  // was going silent mid-decay, at gain ~0.5, with whatever raw sample
+  // value the slice happened to end on - an audible truncation click,
+  // structurally guaranteed on every single fade-out regardless of any
+  // scheduling/timing jitter. DecayRamp = 2 steps makes decay finish
+  // exactly when the fade-out-triggering lane's content ends (6+2=8),
+  // so gain is already at/near 0 by the time there's nothing left to play.
   scheduleFadeLane(laneIndex, targetValue, triggerTime) {
-    this.scheduleFade(this.originalEnvGains[laneIndex], targetValue, triggerTime);
-    this.scheduleFade(this.octaveEnvGains[laneIndex], targetValue, triggerTime);
-
-    this.laneFadeState[laneIndex] = {
-      fromValue: targetValue === 1 ? 0 : 1,
-      toValue: targetValue,
-      startTime: triggerTime,
-      duration: this.Ramp
-    };
-  }
-
-  // Pure-JS interpolation of what a lane's envelope gain SHOULD be right
-  // now, from the schedule we ourselves recorded in scheduleFadeLane() -
-  // used only for the waveform visualization/debug readout, never for the
-  // actual audio (that's still driven by the real AudioParam automation
-  // scheduled above, untouched).
-  computeLaneGain(laneIndex, now) {
-    const state = this.laneFadeState[laneIndex];
-    if (!state) return 0;
-
-    const { fromValue, toValue, startTime, duration } = state;
-    if (now <= startTime) return fromValue;
-    if (duration <= 0 || now >= startTime + duration) return toValue;
-
-    const t = (now - startTime) / duration;
-    return fromValue + (toValue - fromValue) * t;
+    const duration = targetValue === 1 ? this.Ramp : this.DecayRamp;
+    this.scheduleFade(this.originalEnvGains[laneIndex], targetValue, triggerTime, duration);
+    this.scheduleFade(this.octaveEnvGains[laneIndex], targetValue, triggerTime, duration);
   }
 
   resetGains(atTime) {
@@ -300,7 +282,6 @@ class Player {
       g.gain.cancelScheduledValues(atTime);
       g.gain.setValueAtTime(0, atTime);
     });
-    this.laneFadeState = [null, null, null, null];
   }
 
   // -------------------------
@@ -400,6 +381,7 @@ class Player {
 
       this.step16 = res.stride / 4;
       this.Ramp = this.step16 * 4;
+      this.DecayRamp = this.step16 * 2;
 
       this.startPlayback();
       this.setRecordingUI("idle");
@@ -514,13 +496,18 @@ class Player {
     const quarterX = (i) => Math.round((i / 4) * WAVEFORM_CANVAS_W);
 
     // Per-lane highlight: which quarter (0-3) is currently assigned to that
-    // lane, lit proportional to the lane's live envelope gain (computed
-    // from our own schedule - see computeLaneGain()).
-    const nowT = sharedCtx ? sharedCtx.currentTime : 0;
+    // lane, lit proportional to the lane's live envelope gain - read
+    // straight off the real AudioParam. (We briefly switched this to a
+    // self-computed prediction, suspecting the readback itself was
+    // unreliable mid-ramp - it wasn't; the real bug was DecayRamp running
+    // 2 steps past the end of the source's own buffer content, see
+    // scheduleFadeLane(). Reading the real value is what surfaced that,
+    // and is what actually verifies the fix.)
     const liveGains = [0, 0, 0, 0];
     for (let lane = 0; lane < 4; lane++) {
       const contentIndex = this.currentLaneContent[lane];
-      const gain = this.computeLaneGain(lane, nowT);
+      const envGain = this.originalEnvGains[lane];
+      const gain = envGain ? envGain.gain.value : 0;
       liveGains[lane] = gain;
 
       if (contentIndex == null || gain <= 0.01) continue;
@@ -532,7 +519,10 @@ class Player {
     }
 
     if (this.els.gainDebug) {
-      this.els.gainDebug.textContent = liveGains.map((g) => g.toFixed(2)).join(" · ");
+      const spans = this.els.gainDebug.children;
+      for (let i = 0; i < 4 && i < spans.length; i++) {
+        spans[i].textContent = liveGains[i].toFixed(2);
+      }
     }
 
     // Base waveform line.

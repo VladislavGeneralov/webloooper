@@ -115,12 +115,20 @@
       font-variant-numeric: tabular-nums;
     }
 
-    /* Live per-lane gain readout - debug aid, kept tiny/unobtrusive. */
+    /* Live per-lane gain readout - debug aid, kept tiny/unobtrusive. One
+       column per waveform quarter, so each number sits under the middle
+       of the segment it belongs to. */
     .gain-debug {
-      font-size: 8px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      font-size: 9px;
       color: var(--ink-muted);
       font-variant-numeric: tabular-nums;
-      opacity: 0.7;
+      opacity: 0.75;
+    }
+
+    .gain-debug span {
+      text-align: center;
     }
 
     .left-panel {
@@ -376,8 +384,10 @@
 
       <div class="waveform-panel">
         <canvas class="waveform" data-role="waveform" width="320" height="112"></canvas>
+        <div class="gain-debug" data-role="gainDebug">
+          <span></span><span></span><span></span><span></span>
+        </div>
         <div class="waveform-meta" data-role="durationLabel">NO SIGNAL</div>
-        <div class="gain-debug" data-role="gainDebug"></div>
       </div>
 
       <div class="left-panel">
