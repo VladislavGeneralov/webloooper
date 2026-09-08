@@ -66,12 +66,13 @@
       --thumb-h: 24px;
       --thumb-margin: calc((var(--track-h) - var(--thumb-h)) / 2);
 
-      --font-title: 12px;
-      --font-meta: 10px;
-      --font-debug: 9px;
-      --font-label: 11px;
-      --font-value: 9px;
-      --font-btn: 10px;
+      /* Two sizes only: --font-lg for the title and the control labels
+         (REV PROB/ORIG/LOW/SHUFFLE) - what a control IS. --font-sm for
+         everything that's a live readout or status (Ready to record,
+         REC/STOP, gain-debug, the 0%/50% values) - what it's currently
+         showing. */
+      --font-lg: 9px;
+      --font-sm: 6px;
 
       /* Right (fader) column width and overall card width, computed from
          the sizes above instead of measured from rendered content - grid
@@ -111,12 +112,8 @@
         --thumb-w: 28px;
         --thumb-h: 48px;
 
-        --font-title: 24px;
-        --font-meta: 20px;
-        --font-debug: 18px;
-        --font-label: 22px;
-        --font-value: 18px;
-        --font-btn: 20px;
+        --font-lg: 18px;
+        --font-sm: 12px;
       }
     }
 
@@ -195,7 +192,7 @@
     .player-title {
       grid-column: 1 / -1;
       text-align: center;
-      font-size: var(--font-title);
+      font-size: var(--font-lg);
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: var(--ink-muted);
@@ -227,7 +224,7 @@
     }
 
     .waveform-meta {
-      font-size: var(--font-meta);
+      font-size: var(--font-sm);
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: var(--ink-muted);
@@ -240,7 +237,7 @@
     .gain-debug {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      font-size: var(--font-debug);
+      font-size: var(--font-sm);
       color: var(--ink-muted);
       font-variant-numeric: tabular-nums;
       opacity: 0.75;
@@ -314,7 +311,7 @@
       min-width: 0;
       padding: 0;
       border-radius: 50%;
-      font-size: var(--font-btn);
+      font-size: var(--font-sm);
     }
 
     /* REC LED: flat lit/unlit color swap, no glow halo. */
@@ -350,7 +347,7 @@
     }
 
     .knob-label {
-      font-size: var(--font-label);
+      font-size: var(--font-lg);
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--ink-muted);
@@ -447,7 +444,7 @@
     }
 
     .knob-value {
-      font-size: var(--font-value);
+      font-size: var(--font-sm);
       color: var(--ink-muted);
       font-variant-numeric: tabular-nums;
       text-align: center;
