@@ -147,14 +147,7 @@
       display: grid;
       grid-template-columns: var(--left-col) var(--right-col);
       gap: var(--card-gap);
-      /* Left/right padding shifted (same total as before, just
-         redistributed) - the left column centers its round rec button/
-         knob within --left-col, which is wider than either, leaving
-         visible slack there; the right column's fader pair fills
-         --right-col exactly with no slack. Left edge ends up with much
-         more breathing room than the right, so a few px move from the
-         left side to the right to balance it. */
-      padding: var(--card-pad) calc(var(--card-pad) + 6px) var(--card-pad) calc(var(--card-pad) - 6px);
+      padding: var(--card-pad);
       border: 1px solid var(--black);
       background: var(--panel-gradient);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 16px 40px rgba(0, 0, 0, 0.5);
@@ -220,6 +213,15 @@
       text-align: center;
     }
 
+    /* The rec button/knob are centered within --left-col via
+       align-items:center, but --left-col is wider than that content -
+       leaving visible slack before it - while the fader pair on the
+       right exactly fills --right-col with none. That reads as a big
+       gap before the knob and almost none after the LOW fader. Nudging
+       just this row (not .player-title/.waveform-panel, which span the
+       full card width and need to stay symmetric) left by the same
+       amount on both sides balances it without changing the card's own
+       padding or overall width. */
     .left-panel {
       display: flex;
       flex-direction: column;
@@ -227,6 +229,7 @@
       justify-content: flex-start;
       gap: var(--left-panel-gap);
       padding-top: 4px;
+      margin-left: -6px;
     }
 
     .right-panel {
@@ -236,6 +239,7 @@
       flex-direction: column;
       justify-content: flex-start;
       padding-top: 4px;
+      margin-right: 6px;
     }
 
     .rec-group {
