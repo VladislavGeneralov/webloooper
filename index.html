@@ -41,9 +41,6 @@
       min-height: 100vh;
       background: var(--black);
       color: var(--text);
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
       overflow-x: hidden;
       padding: 20px 10px;
       /* Kiosk-style lockdown (same convention as kladmineralovweb/SCDJ):
@@ -51,14 +48,10 @@
          no accidental text selection or long-press callouts while playing
          on a phone. Interactive controls (knob, faders) still work - they
          handle their own drag via pointer events / native slider behavior,
-         which isn't blocked by this. pan-y (not none): unlike
-         kladmineralovweb/SCDJ's single fixed-height "stage", this page
-         stacks 4 growing player cards - measured to fit on common phone
-         viewports (390x844, 375x667, before/after a recording) with no
-         overflow, but touch-action:none would leave no way to scroll if
-         some device/content combination ever does overflow. pan-y keeps
-         vertical scroll as a safety net while still blocking pinch-zoom
-         and horizontal panning. */
+         which isn't blocked by this. pan-y (not none): the grid drops to
+         a single scrollable column on narrow phones (see .players below),
+         so vertical scroll has to stay available - pan-y blocks pinch-zoom
+         and horizontal panning while leaving that scroll as-is. */
       overscroll-behavior: none;
       touch-action: pan-y;
       user-select: none;
@@ -66,22 +59,26 @@
       -webkit-touch-callout: none;
     }
 
+    /* Same convention as SCDJ/kladminweb: no JS measuring, no forced
+       exact-fit scaling - just native CSS reflow. auto-fit lets the grid
+       show 2 columns when there's room and drop to 1 column (page then
+       simply scrolls vertically, same as kladminweb's stage) when there
+       isn't, at any viewport width, with zero computation on our side. */
     .players {
+      /* auto-fit only resolves to more than 1 track when the grid has a
+         definite width to measure against - body is normal block flow
+         (not flex), so this 100% resolves against its definite content
+         width instead of an indefinite shrink-to-fit size. */
+      width: 100%;
       display: grid;
-      grid-template-columns: repeat(2, min-content);
+      grid-template-columns: repeat(auto-fit, minmax(184px, max-content));
       gap: 10px;
       justify-content: center;
     }
 
-    /* Narrower portrait card, but keeping the original two-column split:
-       left column stacks rec/shuffle/reverse, right column holds the
-       fader pair - just both columns tightened up so the whole card (and
-       the waveform above it) is narrower than before, not collapsed into
-       a single stacked column. Sized so 2 cards fit a ~375px phone
-       natively (no/minimal transform:scale needed) - scaling the whole
-       already-wide card down uniformly (the previous approach) shrinks
-       height along with width, leaving unused space below instead of
-       using the phone's actual screen height. */
+    /* Narrower portrait card, keeping the original two-column split inside
+       each card: left column stacks rec/shuffle/reverse, right column
+       holds the fader pair. */
     .controls {
       width: fit-content;
       min-width: 0;
@@ -408,31 +405,6 @@
         linear-gradient(180deg, var(--black2), var(--black));
     }
 
-    /* Keep the exact same 2-column desktop grid at every viewport width -
-       never restructure to a single column - instead shrink the whole
-       thing uniformly to fit narrow phones, via JS (see fitPlayersToViewport
-       in main.js). CSS `zoom` was tried first (it, unlike transform,
-       shrinks the box's own contribution to layout, so no leftover blank
-       space) but its browser support is inconsistent - confirmed broken
-       on iOS Safari in the field (cards rendered full-size, unscaled,
-       overflowing the screen). transform:scale has universal support;
-       #players-wrap's width/height get set in JS to match the scaled
-       size, since transform alone doesn't shrink the layout box. */
-    #players-wrap {
-      overflow: hidden;
-      /* body is display:flex, and flex items default to flex-shrink:1 -
-         which compresses this below its explicit width (even
-         width:max-content, set in JS during measurement) to fit body's
-         available space, regardless of the width property. Without this,
-         fitPlayersToViewport() in main.js always measured the ALREADY-
-         shrunk width instead of #players' true natural 2-column size. */
-      flex-shrink: 0;
-    }
-
-    .players {
-      transform-origin: top center;
-    }
-
   </style>
 </head>
 
@@ -490,9 +462,7 @@
     </div>
   </template>
 
-  <div id="players-wrap">
-    <div id="players" class="players"></div>
-  </div>
+  <div id="players" class="players"></div>
 
   <script src="main.js"></script>
 

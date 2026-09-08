@@ -860,56 +860,6 @@ for (let i = 0; i < PLAYER_COUNT; i++) {
 }
 
 // -------------------------
-// FIT THE 2-COLUMN GRID TO NARROW VIEWPORTS
-// -------------------------
-// Scales #players down uniformly (via transform, not CSS `zoom` - that
-// was tried first but has inconsistent browser support, confirmed broken
-// on iOS Safari, where it rendered the grid full-size and let it overflow
-// the screen instead of shrinking). transform:scale doesn't affect layout
-// on its own, so #players-wrap's own box is resized in JS to match the
-// visually-scaled size - otherwise the page would reserve the full
-// unscaled height/width, leaving blank space or a stray scrollbar.
-function fitPlayersToViewport() {
-  const wrap = document.getElementById("players-wrap");
-  if (!wrap || !container) return;
-
-  // #players-wrap is a normal block div - width:auto would otherwise
-  // stretch/shrink it to match ITS OWN parent (body's content width),
-  // which then constrains #players (also width:auto) to that same
-  // already-narrow width before it's ever measured below - so
-  // offsetWidth would report the pre-shrunk size, not the grid's true
-  // 2-column min-content width. max-content here lets the wrapper (and
-  // therefore #players) grow to its real natural size first.
-  wrap.style.width = "max-content";
-  container.style.transform = "none";
-  const naturalWidth = container.offsetWidth;
-  const naturalHeight = container.offsetHeight;
-  if (!naturalWidth || !naturalHeight) return;
-
-  const bodyStyle = getComputedStyle(document.body);
-  const availableWidth = window.innerWidth
-    - parseFloat(bodyStyle.paddingLeft || 0)
-    - parseFloat(bodyStyle.paddingRight || 0);
-  const availableHeight = window.innerHeight
-    - parseFloat(bodyStyle.paddingTop || 0)
-    - parseFloat(bodyStyle.paddingBottom || 0);
-
-  // Constrained by whichever dimension is tighter, so the grid never
-  // overflows either axis (cards are already sized to need little/no
-  // scaling on common phones - this just covers unusually short viewports
-  // too, e.g. with a lot of browser chrome eating vertical space).
-  const scale = Math.min(1, availableWidth / naturalWidth, availableHeight / naturalHeight);
-
-  container.style.transform = scale < 1 ? `scale(${scale})` : "none";
-  wrap.style.width = `${naturalWidth * scale}px`;
-  wrap.style.height = `${naturalHeight * scale}px`;
-}
-
-window.addEventListener("resize", fitPlayersToViewport);
-window.addEventListener("orientationchange", fitPlayersToViewport);
-fitPlayersToViewport();
-
-// -------------------------
 // SHARED CLOCK DRIVER
 // -------------------------
 function rafLoop() {
