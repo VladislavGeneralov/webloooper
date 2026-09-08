@@ -244,20 +244,34 @@
       transform: translate(-50%, -50%) rotate(-90deg);
     }
 
-    /* Round toggle button (shuffle): dark when off, flat green LED when on -
-       no checkbox glyphs, matches the rest of the rack's control language. */
+    /* Round toggle button (shuffle): dark housing always stays dark - only
+       a small inset LED dot (::after) lights up green when on, instead of
+       flooding the whole button with color. */
     .mixer-toggle {
-      width: 17px;
-      height: 17px;
+      width: 26px;
+      height: 26px;
       border-radius: 50%;
       border: 1px solid var(--black);
       background: linear-gradient(180deg, var(--black2), var(--black));
       cursor: pointer;
       padding: 0;
       flex-shrink: 0;
+      position: relative;
     }
 
-    .mixer-toggle.active {
+    .mixer-toggle::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--black2);
+    }
+
+    .mixer-toggle.active::after {
       background: var(--led-green);
     }
 
