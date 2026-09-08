@@ -347,7 +347,8 @@ class Player {
       const arrayBuffer = await blob.arrayBuffer();
 
       const ctx = sharedCtx;
-      const recordedBuffer = await ctx.decodeAudioData(arrayBuffer);
+      const decodedBuffer = await ctx.decodeAudioData(arrayBuffer);
+      const recordedBuffer = this.trimToExactDivision(decodedBuffer);
 
       const res = this.splitInto4Buffers(recordedBuffer);
 
@@ -663,8 +664,8 @@ class Player {
 
       if (this.macroCounter === 0) {
         this.currentLaneContent[0] = this.bufferOrder[0];
-        this.playIndex(this.bufferOrder[0], triggerTime);
-        this.playIndexSlow(this.bufferOrder[0], triggerTime);
+        this.playIndex(this.bufferOrder[0], 0, triggerTime);
+        this.playIndexSlow(this.bufferOrder[0], 0, triggerTime);
         this.scheduleFadeLane(0, 1, triggerTime);
       }
 
@@ -674,8 +675,8 @@ class Player {
 
       if (this.macroCounter === 4) {
         this.currentLaneContent[1] = this.bufferOrder[1];
-        this.playIndex(this.bufferOrder[1], triggerTime);
-        this.playIndexSlow(this.bufferOrder[1], triggerTime);
+        this.playIndex(this.bufferOrder[1], 1, triggerTime);
+        this.playIndexSlow(this.bufferOrder[1], 1, triggerTime);
         this.scheduleFadeLane(1, 1, triggerTime);
       }
 
@@ -685,8 +686,8 @@ class Player {
 
       if (this.macroCounter === 8) {
         this.currentLaneContent[2] = this.bufferOrder[2];
-        this.playIndex(this.bufferOrder[2], triggerTime);
-        this.playIndexSlow(this.bufferOrder[2], triggerTime);
+        this.playIndex(this.bufferOrder[2], 2, triggerTime);
+        this.playIndexSlow(this.bufferOrder[2], 2, triggerTime);
         this.scheduleFadeLane(2, 1, triggerTime);
       }
 
@@ -696,8 +697,8 @@ class Player {
 
       if (this.macroCounter === 12) {
         this.currentLaneContent[3] = this.bufferOrder[3];
-        this.playIndex(this.bufferOrder[3], triggerTime);
-        this.playIndexSlow(this.bufferOrder[3], triggerTime);
+        this.playIndex(this.bufferOrder[3], 3, triggerTime);
+        this.playIndexSlow(this.bufferOrder[3], 3, triggerTime);
         this.scheduleFadeLane(3, 1, triggerTime);
       }
 
@@ -710,36 +711,45 @@ class Player {
   // -------------------------
   // PLAY BUFFER
   // -------------------------
-  playIndex(i, time) {
-    if (!this.buffers[i]) return;
+  // contentIndex (which recorded grain to play) and laneIndex (which fixed
+  // schedule slot / envelope gain node is fading it in right now) are two
+  // independent things - only equal by coincidence when shuffle is off
+  // (bufferOrder is [0,1,2,3] then). With shuffle on they diverge, so both
+  // must be passed explicitly: connecting to originalEnvGains[contentIndex]
+  // instead of originalEnvGains[laneIndex] used to route the new source
+  // into whatever OTHER slot's envelope happened to share that array index
+  // - silenced/clicked by a completely unrelated trigger's automation
+  // instead of the one actually scheduled for it.
+  playIndex(contentIndex, laneIndex, time) {
+    if (!this.buffers[contentIndex]) return;
 
     const isReverse = Math.random() < this.reverseProbability;
     const src = this.createSourceNode();
 
     if (!src) return;
 
-    src.buffer = isReverse ? this.buffersRev[i] : this.buffers[i];
+    src.buffer = isReverse ? this.buffersRev[contentIndex] : this.buffers[contentIndex];
 
     src.playbackRate.value = this.speedall;
 
-    src.connect(this.originalEnvGains[i]);
+    src.connect(this.originalEnvGains[laneIndex]);
 
     src.start(time);
   }
 
-  playIndexSlow(i, time) {
-    if (!this.buffers[i]) return;
+  playIndexSlow(contentIndex, laneIndex, time) {
+    if (!this.buffers[contentIndex]) return;
 
     const isReverse = Math.random() < this.reverseProbability;
     const src = this.createSourceNode();
 
     if (!src) return;
 
-    src.buffer = isReverse ? this.buffersRev[i] : this.buffers[i];
+    src.buffer = isReverse ? this.buffersRev[contentIndex] : this.buffers[contentIndex];
 
     src.playbackRate.value = this.speedslow;
 
-    src.connect(this.octaveEnvGains[i]);
+    src.connect(this.octaveEnvGains[laneIndex]);
 
     src.start(time);
   }
