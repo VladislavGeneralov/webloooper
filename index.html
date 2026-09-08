@@ -380,13 +380,19 @@
         linear-gradient(180deg, var(--black2), var(--black));
     }
 
-    /* Two cards (each ~96px left column + fader-row right column) plus
-       gaps/padding need roughly 540px side by side - below that, stack to
-       one column so each still-portrait card just fits phone width. */
-    @media (max-width: 540px) {
+    /* Keep the exact same 2-column desktop grid at every viewport width -
+       never restructure to a single column - and instead shrink the whole
+       thing uniformly to fit narrow phones. `zoom` (not `transform:scale`)
+       is the right tool here: unlike transform, it actually affects the
+       box's contribution to layout/flow, so there's no leftover blank
+       space where the pre-scale box used to be - the grid's natural
+       502px width (2 x 244px cards + 14px gap) genuinely shrinks.
+       502px is .players' own width; the 20px accounts for body's own
+       left+right padding so the full 522px card-plus-chrome fits exactly
+       at that breakpoint (zoom 1 right at/above it). */
+    @media (max-width: 522px) {
       .players {
-        grid-template-columns: 1fr;
-        justify-items: center;
+        zoom: calc((100vw - 20px) / 502px);
       }
     }
 
