@@ -68,6 +68,7 @@
       --toggle-size: 11px;
       --players-gap: 6px;
       --vu-w: 400px;
+      --fx-send-w: 130px;
 
       /* Fader groove + thumb - kept as variables (rather than fixed px)
          purely so desktop can be a genuine proportional scale-up, not
@@ -127,6 +128,7 @@
         --toggle-size: 34px;
         --players-gap: 20px;
         --vu-w: 760px;
+        --fx-send-w: 280px;
 
         --track-h: 8px;
         --thumb-w: 28px;
@@ -666,11 +668,13 @@
       margin-top: var(--players-gap);
     }
 
+    /* Send fader on the left at a fixed (shrinkable) --fx-send-w, then the
+       knobs: each knob group takes an equal share of the remaining width
+       and centers itself in it, so 2 or 3 knobs spread evenly. */
     .fx-block {
       width: var(--fx-w);
       max-width: 100%;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
+      display: flex;
       align-items: center;
       column-gap: calc(var(--card-gap) * 2);
       padding: var(--card-pad) calc(var(--card-pad) * 2);
@@ -681,7 +685,12 @@
     }
 
     /* Left part of a row: name, the Send in fader, its label + value. */
+    .fx-block > .knob-group {
+      flex: 1 1 0;
+    }
+
     .fx-send {
+      flex: 0 1 var(--fx-send-w);
       display: flex;
       flex-direction: column;
       gap: var(--tiny-gap);
@@ -944,8 +953,13 @@
       </div>
       <div class="knob-group">
         <button class="rack-btn rack-btn-round tap-btn" id="delayTap" type="button">Tap</button>
-        <span class="knob-label">Time</span>
-        <span class="knob-value" id="delayTimeValue"></span>
+        <span class="knob-label">Tempo</span>
+        <span class="knob-value" id="delayTempoValue"></span>
+      </div>
+      <div class="knob-group">
+        <div class="knob" id="delaySpeedKnob"></div>
+        <span class="knob-label">Speed</span>
+        <span class="knob-value"></span>
       </div>
       <div class="knob-group">
         <div class="knob" id="delayFilterKnob"></div>
@@ -974,6 +988,11 @@
       <div class="knob-group">
         <div class="knob" id="reverbDampKnob"></div>
         <span class="knob-label">Damp</span>
+        <span class="knob-value"></span>
+      </div>
+      <div class="knob-group">
+        <div class="knob" id="reverbDiffusionKnob"></div>
+        <span class="knob-label">Diffusion</span>
         <span class="knob-value"></span>
       </div>
     </div>

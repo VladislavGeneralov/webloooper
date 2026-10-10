@@ -1063,8 +1063,11 @@ for (let i = 0; i < PLAYER_COUNT; i++) {
 // below keep their own state in fxState and buildSendFx() reads it when the
 // graph is created; before that, moving them just updates the readouts.
 const SMOOTH_TIME = 0.02;
-const DELAY_MAX_TIME = 2;      // also the longest gap between two taps that still counts
-const DELAY_FEEDBACK = 0.5;    // fixed - only TAP and FILTER are on the panel
+const DELAY_MAX_TIME = 2;      // DelayNode buffer - comfortably above the SPEED range
+const DELAY_SLOW = 1.2;        // SPEED knob fully left: 1200 ms
+const DELAY_FAST = 0.064;      // SPEED knob fully right: 64 ms
+const TAP_RESET_GAP = 2;       // a pause longer than this between taps starts a new tap sequence
+const DELAY_FEEDBACK = 0.5;    // fixed - only TAP, SPEED and FILTER are on the panel
 const TAP_HISTORY = 4;         // average over the last 4 taps (3 intervals)
 const REVERB_WET = 0.6;
 
@@ -1074,8 +1077,37 @@ const fxState = {
   delayFilter: 0.5,
   reverbSend: 0,
   reverbDecay: 0.9,
-  reverbDamp: 0.3
+  reverbDamp: 0.3,
+  reverbDiffusion: 0.75   // = the processor's own default diffusion (see REVERB_DIFFUSION)
 };
+
+// DIFFUSION knob: one control for all four Dattorro diffusion coefficients
+// - input diffusion 1/2 (how fast the attack smears into a dense cloud) and
+// decay diffusion 1/2 (density/grain of the tail itself). Each is the
+// processor's default scaled by the same factor, so their balance stays as
+// designed; knob 0.75 = exactly the defaults (the reverb sounded like this
+// before the knob existed). Fully left = 0 (discrete echoes, no smear),
+// fully right = the largest coefficient reaches REVERB_DIFFUSION_CAP -
+// all-pass feedback near 1 starts to ring.
+const REVERB_DIFFUSION = {
+  inputDiffusion1: 0.75,
+  inputDiffusion2: 0.625,
+  decayDiffusion1: 0.7,
+  decayDiffusion2: 0.5
+};
+const REVERB_DIFFUSION_CAP = 0.95;
+
+function applyReverbDiffusion(ramp) {
+  if (!reverbNode) return;
+  // Piecewise linear: knob 0 -> 0, knob 0.75 -> 1 (defaults), knob 1 ->
+  // the scale that puts the largest default (0.75) at the cap.
+  const k = fxState.reverbDiffusion;
+  const maxScale = REVERB_DIFFUSION_CAP / Math.max(...Object.values(REVERB_DIFFUSION));
+  const scale = k <= 0.75 ? k / 0.75 : 1 + ((k - 0.75) / 0.25) * (maxScale - 1);
+  for (const [name, base] of Object.entries(REVERB_DIFFUSION)) {
+    setParam(reverbNode.parameters.get(name), base * scale, ramp);
+  }
+}
 
 let delaySendGain = null;
 let delayNode = null;
@@ -1192,6 +1224,7 @@ function buildSendFx(ctx) {
     reverbNode.parameters.get("wet").value = REVERB_WET;
     reverbNode.parameters.get("decay").value = fxState.reverbDecay;
     reverbNode.parameters.get("damping").value = fxState.reverbDamp;
+    applyReverbDiffusion(false);
 
     reverbSendGain.connect(reverbNode);
     reverbNode.connect(masterMix);
@@ -1215,22 +1248,40 @@ function bindSendFader(inputId, valueId, stateKey, getGainNode) {
 bindSendFader("delaySend", "delaySendValue", "delaySend", () => delaySendGain);
 bindSendFader("reverbSend", "reverbSendValue", "reverbSend", () => reverbSendGain);
 
-// TAP: delay time = average interval of the last few taps. A gap longer
-// than DELAY_MAX_TIME starts a fresh tap sequence instead of averaging in a
-// pause. pointerdown, not click - click fires on release, which would put
-// the tap timing at the mercy of how long the finger stays down.
-const delayTimeValueEl = document.getElementById("delayTimeValue");
+// Delay time has two controls that drive the same value:
+// - SPEED knob: left = DELAY_SLOW (1200 ms), right = DELAY_FAST (64 ms),
+//   on a log scale (equal knob travel = equal time RATIO), so the middle
+//   isn't crammed into the fast end - center is ~277 ms.
+// - TAP: average interval of the last few taps; it moves the SPEED knob to
+//   the tapped time (clamped to the knob's range). A pause longer than
+//   TAP_RESET_GAP starts a fresh tap sequence instead of averaging it in.
+//   pointerdown, not click - click fires on release, which would put the
+//   tap timing at the mercy of how long the finger stays down.
+// TEMPO under the Tap button shows the same time as BPM (time = one beat).
+const delayTempoValueEl = document.getElementById("delayTempoValue");
 let tapTimes = [];
 
-function setDelayTime(seconds) {
-  fxState.delayTime = Math.min(DELAY_MAX_TIME, Math.max(0.01, seconds));
-  delayTimeValueEl.textContent = `${Math.round(fxState.delayTime * 1000)} ms`;
+const speedKnobToTime = (v) => DELAY_SLOW * Math.pow(DELAY_FAST / DELAY_SLOW, v);
+const timeToSpeedKnob = (t) => Math.log(t / DELAY_SLOW) / Math.log(DELAY_FAST / DELAY_SLOW);
+
+const delaySpeedKnob = makeKnob(document.getElementById("delaySpeedKnob"), {
+  min: 0,
+  max: 1,
+  value: timeToSpeedKnob(fxState.delayTime),
+  format: (v) => `${Math.round(speedKnobToTime(v) * 1000)} ms`,
+  onChange: (v) => setDelayTime(speedKnobToTime(v), true)
+});
+
+function setDelayTime(seconds, fromKnob) {
+  fxState.delayTime = Math.min(DELAY_SLOW, Math.max(DELAY_FAST, seconds));
+  delayTempoValueEl.textContent = `${Math.round(60 / fxState.delayTime)} bpm`;
+  if (!fromKnob) delaySpeedKnob.set(timeToSpeedKnob(fxState.delayTime));
   if (delayNode) delayNode.delayTime.setTargetAtTime(fxState.delayTime, sharedCtx.currentTime, 0.05);
 }
 
 document.getElementById("delayTap").addEventListener("pointerdown", () => {
   const t = performance.now() / 1000;
-  if (tapTimes.length && t - tapTimes[tapTimes.length - 1] > DELAY_MAX_TIME) tapTimes = [];
+  if (tapTimes.length && t - tapTimes[tapTimes.length - 1] > TAP_RESET_GAP) tapTimes = [];
   tapTimes.push(t);
   if (tapTimes.length > TAP_HISTORY) tapTimes.shift();
   if (tapTimes.length < 2) return;
@@ -1269,6 +1320,17 @@ makeKnob(document.getElementById("reverbDampKnob"), {
   onChange: (v) => {
     fxState.reverbDamp = v;
     if (reverbNode) setParam(reverbNode.parameters.get("damping"), v, true);
+  }
+});
+
+makeKnob(document.getElementById("reverbDiffusionKnob"), {
+  min: 0,
+  max: 1,
+  value: fxState.reverbDiffusion,
+  format: (v) => `${Math.round(v * 100)}%`,
+  onChange: (v) => {
+    fxState.reverbDiffusion = v;
+    applyReverbDiffusion(true);
   }
 });
 

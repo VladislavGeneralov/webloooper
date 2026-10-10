@@ -61,12 +61,21 @@ they can be layered/performed together.
 The sum of all 4 players goes to the master dry and, in parallel, to two
 send effects, each with its own horizontal **Send in** fader:
 
-- **Delay** — **Tap** sets the delay time (average of the last few taps,
-  up to 2s; a longer pause starts a new tap sequence). **Filter** is a tilt
+- **Delay** — **Speed** sets the delay time: fully left 1200 ms, fully
+  right 64 ms, log scale (center ≈ 277 ms). **Tap** sets the same time from
+  the average of the last few taps and moves the Speed knob to it (clamped
+  to 64–1200 ms; a pause over 2s starts a new tap sequence); **Tempo**
+  under it shows that time as BPM (time = one beat). **Filter** is a tilt
   filter inside the feedback loop: left = lowpass (darker repeats), right =
   highpass (thinner repeats), center = off. Feedback is fixed at 50%.
-- **Reverb** — Dattorro plate (same processor as SendS/NEWRACK), **Decay**
-  and **Damp** knobs.
+- **Reverb** — Dattorro plate (same processor as SendS/NEWRACK), **Decay**,
+  **Damp** and **Diffusion** knobs. Diffusion moves all four diffusion
+  coefficients together (input 1/2 + decay 1/2, scaled from their
+  defaults): 75% = the original sound, left = discrete echoes, right =
+  denser/smoother tail (capped at 0.95 so it doesn't ring).
+
+The Send in faders are a fixed, shorter length; the knobs spread evenly
+to their right.
 
 Each block is as wide as two player columns: on a desktop wide enough for
 4 players in a row they sit side by side, on a phone one under the other.
