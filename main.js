@@ -1,4 +1,12 @@
 const MAX_DURATION = 10;
+
+// The 4/8 switch above each player's REC LED: how many grains a recording is
+// cut into. Lane/envelope nodes are always built for the maximum, so the
+// switch never has to rebuild the audio graph - unused lanes just stay at 0.
+const SLICE_OPTIONS = [4, 8];
+const MAX_SLICES = 8;
+// Fade-out of the player's output before a re-slice (see setSliceCount).
+const SLICE_SWITCH_FADE = 0.03;
 const SCHEDULER_LOOKAHEAD = 0.05;
 const MIN_SCHEDULING_GAP = 0.01;
 
@@ -12,6 +20,9 @@ const WAVEFORM_CANVAS_H = 112;
 // -------------------------
 let sharedCtx = null;
 let masterMix = null;
+// Sum of all 4 players (their outputGains), before the send FX: goes to
+// masterMix dry and to each send's own "Send in" gain.
+let playersBus = null;
 
 function getSharedContext() {
   if (!sharedCtx) {
@@ -19,6 +30,12 @@ function getSharedContext() {
     masterMix = sharedCtx.createGain();
     masterMix.gain.value = 1;
     masterMix.connect(sharedCtx.destination);
+
+    playersBus = sharedCtx.createGain();
+    playersBus.gain.value = 1;
+    playersBus.connect(masterMix);
+
+    buildSendFx(sharedCtx);
   }
   return sharedCtx;
 }
@@ -104,11 +121,28 @@ class Player {
     this.speedall = 1;
     this.speedslow = 0.5;
 
+    // PITCH knob (semitones -> playback-rate multiplier) and the step length
+    // the recording itself implies at rate 1 - see applyPitch().
+    this.pitchRate = 1;
+    this.baseStep16 = 0;
+
     this.buffers = [];
     this.buffersRev = [];
 
     this.activeSources = [];
+
+    // How many grains the recording is cut into (the 4/8 switch). Every
+    // per-grain thing - buffers, lanes in use, the macro cycle length, the
+    // waveform segments - is sized from this; see loadSlices() and tick().
+    this.sliceCount = 4;
     this.bufferOrder = [0, 1, 2, 3];
+
+    // The decoded take, kept whole (untrimmed, unsliced), so flipping the
+    // 4/8 switch re-slices the same recording instead of needing a new one.
+    // sliceSwitchToken guards the switch's short fade-out/re-slice delay
+    // against overlapping flips or a new recording starting meanwhile.
+    this.recordedBuffer = null;
+    this.sliceSwitchToken = 0;
 
     this.isPlaying = false;
     this.step16 = 0;
@@ -118,14 +152,15 @@ class Player {
     this.shuffleEnabled = false;
     this.reverseProbability = 0;
 
-    // Waveform display: cached min/max peaks, computed once per recording.
-    // The overlay is 3 fixed vertical ticks splitting it into 4 equal
-    // quarters (one per buffer slot 0-3, not the true overlapping sample
-    // ranges), redrawn every frame with a live per-lane highlight read
-    // straight off the envelope gain nodes so the overlay always matches
-    // what's actually audible (1-2 quarters lit at once during a crossfade).
+    // Waveform display: cached min/max peaks, computed once per slicing.
+    // The overlay is sliceCount-1 fixed vertical ticks splitting it into
+    // sliceCount equal segments (one per buffer slot, not the true
+    // overlapping sample ranges), redrawn every frame with a live per-lane
+    // highlight read straight off the envelope gain nodes so the overlay
+    // always matches what's actually audible (1-2 segments lit at once
+    // during a crossfade).
     this.waveformPeaks = null;
-    this.currentLaneContent = [null, null, null, null];
+    this.currentLaneContent = new Array(this.sliceCount).fill(null);
 
     this.bindControls();
   }
@@ -136,12 +171,14 @@ class Player {
     this.els = {
       recStop: q("recStop"),
       recLed: q("recLed"),
+      sliceSwitch: q("sliceSwitch"),
       volumeOriginal: q("volumeOriginal"),
       volumeOriginalValue: q("volumeOriginalValue"),
       volumeOctave: q("volumeOctave"),
       volumeOctaveValue: q("volumeOctaveValue"),
       shuffle: q("shuffle"),
       reverseProbabilityKnob: q("reverseProbabilityKnob"),
+      pitchKnob: q("pitchKnob"),
       title: q("player-title"),
       waveform: q("waveform"),
       durationLabel: q("durationLabel"),
@@ -153,6 +190,13 @@ class Player {
     }
 
     this.setRecordingUI("idle");
+    this.renderSliceSwitch();
+    this.setGainDebugSlots();
+
+    this.els.sliceSwitch.onclick = () => {
+      const next = SLICE_OPTIONS[(SLICE_OPTIONS.indexOf(this.sliceCount) + 1) % SLICE_OPTIONS.length];
+      this.setSliceCount(next);
+    };
 
     this.els.recStop.onclick = async () => {
       if (this.mediaRecorder?.state === "recording") {
@@ -172,8 +216,8 @@ class Player {
 
     // Displayed % is relative to the fader's own top (max), not to unity
     // gain - the top of the fader always reads "100%" even though the
-    // real audio gain there is 8x/800% (the actual usable ceiling, fine
-    // sound-wise). The user isn't meant to know/care about the raw gain
+    // real audio gain there is 4x/400% (was 8x - halved, both faders, for
+    // a quieter overall level). The user isn't meant to know/care about the raw gain
     // scale - the fader's own travel is the whole story: middle = 50%.
     this.els.volumeOriginal.oninput = (e) => {
       const v = parseFloat(e.target.value);
@@ -203,6 +247,48 @@ class Player {
         this.reverseProbability = v;
       }
     });
+
+    makeKnob(this.els.pitchKnob, {
+      min: -12,
+      max: 12,
+      value: 0,
+      format: (v) => (Math.abs(v) < 0.05 ? "0 st" : `${v > 0 ? "+" : ""}${v.toFixed(1)} st`),
+      onChange: (v) => {
+        this.pitchRate = Math.pow(2, v / 12);
+        this.applyPitch();
+      }
+    });
+  }
+
+  // -------------------------
+  // PITCH (varispeed)
+  // -------------------------
+  // Like a tape: every grain plays at pitchRate (the octave-down layer at
+  // half of it) and the step clock runs pitchRate times faster, so the
+  // slicing stays exactly the same - the whole loop just gets higher+faster
+  // or lower+slower. Ramp/DecayRamp scale with the step, keeping the
+  // DecayRamp guarantee (decay ends when the grain's content ends, see
+  // scheduleFadeLane()) at any rate. Grains already playing are retuned at
+  // the same instant, so their remaining content stays in step with the
+  // new step length their fade-out will be scheduled on - left at the old
+  // rate, slowing down mid-grain would push that fade-out past the end of
+  // the buffer: the same truncation click DecayRamp exists to prevent.
+  applyPitch() {
+    this.speedall = this.pitchRate;
+    this.speedslow = this.pitchRate * 0.5;
+
+    if (this.baseStep16) {
+      this.step16 = this.baseStep16 / this.pitchRate;
+      this.Ramp = this.step16 * 4;
+      this.DecayRamp = this.step16 * 2;
+    }
+
+    if (sharedCtx) {
+      const now = sharedCtx.currentTime;
+      this.activeSources.forEach((src) => {
+        src.playbackRate.setValueAtTime(this.pitchRate * src.rateFactor, now);
+      });
+    }
   }
 
   // -------------------------
@@ -222,19 +308,20 @@ class Player {
     });
 
     // MediaRecorder can only record a MediaStream, not a Web Audio node, so
-    // the 1.3x input boost has to happen via a real audio-graph detour: mic ->
-    // GainNode(1.3) -> MediaStreamDestination, then MediaRecorder records
-    // *that* stream instead of the raw mic stream.
+    // any input gain has to happen via a real audio-graph detour: mic ->
+    // GainNode -> MediaStreamDestination, then MediaRecorder records *that*
+    // stream instead of the raw mic stream. Currently unity (1x, was 1.3x) -
+    // the node stays in place so the input level is one number to change.
     this.micSource = ctx.createMediaStreamSource(this.micStream);
     this.inputGain = ctx.createGain();
-    this.inputGain.gain.value = 1.3;
+    this.inputGain.gain.value = 1;
     this.micSource.connect(this.inputGain);
     this.micDestination = ctx.createMediaStreamDestination();
     this.inputGain.connect(this.micDestination);
 
     this.outputGain = ctx.createGain();
     this.outputGain.gain.value = 1;
-    this.outputGain.connect(masterMix);
+    this.outputGain.connect(playersBus);
 
     this.originalVolumeGain = ctx.createGain();
     this.originalVolumeGain.gain.value = parseFloat(this.els.volumeOriginal.value);
@@ -247,7 +334,7 @@ class Player {
     this.originalEnvGains = [];
     this.octaveEnvGains = [];
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < MAX_SLICES; i++) {
       const og = ctx.createGain();
       og.gain.value = 0;
       og.connect(this.originalVolumeGain);
@@ -355,6 +442,13 @@ class Player {
 
     this.chunks = [];
     this.buffers = [];
+    this.recordedBuffer = null;
+    this.sliceSwitchToken++; // cancels a 4/8 re-slice still waiting on its fade-out
+    if (this.outputGain) {
+      // ...and reopens the output that re-slice may have been fading out
+      this.outputGain.gain.cancelScheduledValues(sharedCtx.currentTime);
+      this.outputGain.gain.setValueAtTime(1, sharedCtx.currentTime);
+    }
 
     this.clearWaveform();
 
@@ -373,43 +467,8 @@ class Player {
       const blob = new Blob(this.chunks, { type: "audio/webm" });
       const arrayBuffer = await blob.arrayBuffer();
 
-      const ctx = sharedCtx;
-      const decodedBuffer = await ctx.decodeAudioData(arrayBuffer);
-      const recordedBuffer = this.trimToExactDivision(decodedBuffer);
-
-      const res = this.splitInto4Buffers(recordedBuffer);
-
-      this.buffers = res.buffers;
-      this.currentLaneContent = [null, null, null, null];
-
-      this.computeWaveformPeaks(recordedBuffer);
-      this.renderWaveform();
-      this.els.durationLabel.textContent = `Length: ${recordedBuffer.duration.toFixed(2)}s`;
-
-      this.buffersRev = this.buffers.map((buf) => {
-        const reversed = ctx.createBuffer(
-          buf.numberOfChannels,
-          buf.length,
-          buf.sampleRate
-        );
-
-        for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-          const data = buf.getChannelData(ch);
-          const rev = new Float32Array(data.length);
-
-          for (let i = 0; i < data.length; i++) {
-            rev[i] = data[data.length - 1 - i];
-          }
-
-          reversed.copyToChannel(rev, ch, 0);
-        }
-
-        return reversed;
-      });
-
-      this.step16 = res.stride / 4;
-      this.Ramp = this.step16 * 4;
-      this.DecayRamp = this.step16 * 2;
+      this.recordedBuffer = await sharedCtx.decodeAudioData(arrayBuffer);
+      this.loadSlices();
 
       this.startPlayback();
       this.setRecordingUI("idle");
@@ -420,6 +479,118 @@ class Player {
     this.recordingTimeout = setTimeout(() => {
       this.stopRecording();
     }, MAX_DURATION * 1000);
+  }
+
+  // -------------------------
+  // SLICE THE TAKE
+  // -------------------------
+  // Trim + cut this.recordedBuffer into this.sliceCount grains and reset
+  // everything that's sized per grain. Called after every recording and on
+  // every 4/8 flip (with playback stopped in both cases - see setSliceCount).
+  loadSlices() {
+    const ctx = sharedCtx;
+    const N = this.sliceCount;
+    const recordedBuffer = this.trimToExactDivision(this.recordedBuffer, N);
+
+    const res = this.splitIntoBuffers(recordedBuffer, N);
+
+    this.buffers = res.buffers;
+    this.bufferOrder = Array.from({ length: N }, (_, i) => i);
+    this.currentLaneContent = new Array(N).fill(null);
+    this.setGainDebugSlots();
+
+    this.computeWaveformPeaks(recordedBuffer);
+    this.renderWaveform();
+    this.els.durationLabel.textContent = `Length: ${recordedBuffer.duration.toFixed(2)}s`;
+
+    this.buffersRev = this.buffers.map((buf) => {
+      const reversed = ctx.createBuffer(
+        buf.numberOfChannels,
+        buf.length,
+        buf.sampleRate
+      );
+
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        const data = buf.getChannelData(ch);
+        const rev = new Float32Array(data.length);
+
+        for (let i = 0; i < data.length; i++) {
+          rev[i] = data[data.length - 1 - i];
+        }
+
+        reversed.copyToChannel(rev, ch, 0);
+      }
+
+      return reversed;
+    });
+
+    // step16 = a quarter of the stride between grain starts, for any N -
+    // so a grain's content (L = 2*stride) is always 8 steps long, which is
+    // what the fade schedule in tick() and DecayRamp are built around.
+    this.baseStep16 = res.stride / 4;
+    this.applyPitch();
+  }
+
+  // -------------------------
+  // 4/8 SWITCH
+  // -------------------------
+  // With no loop playing (nothing recorded yet, or mid-recording/decoding)
+  // the new count is just stored - the next loadSlices() picks it up. With
+  // a loop playing, re-slicing means stopping every source, and a bare
+  // hardStopAll() would cut the audio mid-waveform (a click). So the
+  // player's own outputGain fades out first (SLICE_SWITCH_FADE), then the
+  // take is re-sliced and restarted from the top behind the closed gain,
+  // and outputGain opens again - the restart always begins with lane 0's
+  // normal Ramp fade-in from 0, so there's no click on the way back in.
+  setSliceCount(count) {
+    if (count === this.sliceCount) return;
+    this.sliceCount = count;
+    this.renderSliceSwitch();
+
+    if (!this.recordedBuffer || !this.isPlaying || !sharedCtx) {
+      this.currentLaneContent = new Array(count).fill(null);
+      this.setGainDebugSlots();
+      return;
+    }
+
+    // Stop scheduling new grains right away: tick() already sizes its cycle
+    // from the new sliceCount, but buffers/bufferOrder are still the old
+    // slicing until loadSlices() runs. Grains already sounding play on
+    // under the fade. A second flip during the wait lands in the branch
+    // above (not playing), and this pending re-slice picks up its count.
+    this.isPlaying = false;
+
+    const token = ++this.sliceSwitchToken;
+    const gain = this.outputGain.gain;
+    const now = sharedCtx.currentTime;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(0, now + SLICE_SWITCH_FADE);
+
+    setTimeout(() => {
+      if (token !== this.sliceSwitchToken || !this.recordedBuffer) return;
+      this.hardStopAll();
+      this.loadSlices();
+      const t = sharedCtx.currentTime;
+      gain.cancelScheduledValues(t);
+      gain.setValueAtTime(1, t);
+      this.startPlayback();
+    }, (SLICE_SWITCH_FADE + 0.015) * 1000);
+  }
+
+  renderSliceSwitch() {
+    const sw = this.els.sliceSwitch;
+    sw.classList.toggle("on", this.sliceCount === 8);
+    sw.setAttribute("aria-label", `Slices: ${this.sliceCount}`);
+  }
+
+  // One gain readout per grain under the waveform, in as many columns as
+  // there are segments, so each number sits under its own segment.
+  setGainDebugSlots() {
+    const el = this.els.gainDebug;
+    if (!el) return;
+    el.style.gridTemplateColumns = `repeat(${this.sliceCount}, 1fr)`;
+    el.replaceChildren(...Array.from({ length: this.sliceCount }, () => document.createElement("span")));
   }
 
   // -------------------------
@@ -474,7 +645,7 @@ class Player {
   // doesn't linger on screen while the new one is being captured.
   clearWaveform() {
     this.waveformPeaks = null;
-    this.currentLaneContent = [null, null, null, null];
+    this.currentLaneContent = new Array(this.sliceCount).fill(null);
 
     const canvas = this.els.waveform;
     if (canvas) {
@@ -529,10 +700,10 @@ class Player {
     this.waveformPeaks = { min, max };
   }
 
-  // Redrawn every animation frame: base waveform + 3 fixed dividers
-  // (quartering the display into the 4 buffer slots) + a green highlight
-  // per lane whose alpha tracks that lane's actual envelope gain right
-  // now - so during a crossfade 1-2 of the 4 quarters light up at once,
+  // Redrawn every animation frame: base waveform + sliceCount-1 fixed
+  // dividers (splitting the display into the sliceCount buffer slots) + a
+  // green highlight per lane whose alpha tracks that lane's actual envelope
+  // gain right now - so during a crossfade 1-2 segments light up at once,
   // matching what's audible.
   renderWaveform() {
     const canvas = this.els.waveform;
@@ -550,9 +721,10 @@ class Player {
     // Both the highlight fill and the divider lines snap to this same
     // integer-pixel grid, so the fill's edge and the divider's position
     // always land on the exact same pixel (no 0-1px seam between them).
-    const quarterX = (i) => Math.round((i / 4) * WAVEFORM_CANVAS_W);
+    const N = this.sliceCount;
+    const segmentX = (i) => Math.round((i / N) * WAVEFORM_CANVAS_W);
 
-    // Per-lane highlight: which quarter (0-3) is currently assigned to that
+    // Per-lane highlight: which segment (0..N-1) is currently assigned to that
     // lane, lit proportional to the lane's live envelope gain - read
     // straight off the real AudioParam. (We briefly switched this to a
     // self-computed prediction, suspecting the readback itself was
@@ -561,15 +733,15 @@ class Player {
     // scheduleFadeLane(). Reading the real value is what surfaced that,
     // and is what actually verifies the fix.)
     //
-    // The fill is positioned by contentIndex (which quarter of the
+    // The fill is positioned by contentIndex (which segment of the
     // RECORDING this lane is currently playing), not by lane number - so
     // the debug numbers underneath must be indexed the same way. Indexing
     // them by lane instead (as before) matched the color only when
     // shuffle is off (contentIndex === lane then); with shuffle on, the
-    // number under a given quarter could belong to a totally different
+    // number under a given segment could belong to a totally different
     // lane than the one whose gain is actually painting that quarter.
-    const gainByContent = [0, 0, 0, 0];
-    for (let lane = 0; lane < 4; lane++) {
+    const gainByContent = new Array(N).fill(0);
+    for (let lane = 0; lane < N; lane++) {
       const contentIndex = this.currentLaneContent[lane];
       const envGain = this.originalEnvGains[lane];
       const gain = envGain ? envGain.gain.value : 0;
@@ -579,15 +751,15 @@ class Player {
 
       if (gain <= 0.01) continue;
 
-      const x0 = quarterX(contentIndex);
-      const x1 = quarterX(contentIndex + 1);
+      const x0 = segmentX(contentIndex);
+      const x1 = segmentX(contentIndex + 1);
       ctx2d.fillStyle = `rgba(62, 207, 110, ${(0.12 + 0.5 * gain).toFixed(3)})`;
       ctx2d.fillRect(x0, 0, Math.max(1, x1 - x0), WAVEFORM_CANVAS_H);
     }
 
     if (this.els.gainDebug) {
       const spans = this.els.gainDebug.children;
-      for (let i = 0; i < 4 && i < spans.length; i++) {
+      for (let i = 0; i < N && i < spans.length; i++) {
         spans[i].textContent = gainByContent[i].toFixed(2);
       }
     }
@@ -606,12 +778,12 @@ class Player {
     }
     ctx2d.stroke();
 
-    // Exactly 3 vertical dividers, splitting the display into 4 equal parts.
+    // Exactly N-1 vertical dividers, splitting the display into N equal parts.
     ctx2d.strokeStyle = "rgba(62, 207, 110, 0.55)";
     ctx2d.lineWidth = 1;
     ctx2d.beginPath();
-    for (let i = 1; i < 4; i++) {
-      const x = quarterX(i) + 0.5;
+    for (let i = 1; i < N; i++) {
+      const x = segmentX(i) + 0.5;
       ctx2d.moveTo(x, 0);
       ctx2d.lineTo(x, WAVEFORM_CANVAS_H);
     }
@@ -621,14 +793,13 @@ class Player {
   // -------------------------
   // TRIM TO EXACT DIVISION
   // -------------------------
-  // splitInto4Buffers() below derives L=floor(2T/(N+1)), S=floor(L/2) - any
+  // splitIntoBuffers() below derives L=floor(2T/(N+1)), S=floor(L/2) - any
   // remainder gets silently dropped by those floors. Trimming the recording
-  // to a multiple of 2*(N+1)=10 samples first makes both divisions land on
-  // exact integers, so there's no rounding remainder at all (already
-  // sub-millisecond in practice, but this removes it outright for the cost
-  // of at most 9 samples, <0.2ms, trimmed off the very end).
-  trimToExactDivision(buffer) {
-    const N = 4;
+  // to a multiple of 2*(N+1) samples (10 for 4 slices, 18 for 8) first makes
+  // both divisions land on exact integers, so there's no rounding remainder
+  // at all (already sub-millisecond in practice, but this removes it
+  // outright for the cost of at most 17 samples, <0.4ms, off the very end).
+  trimToExactDivision(buffer, N) {
     const unit = 2 * (N + 1);
     const total = buffer.length;
     const trimmedLength = total - (total % unit);
@@ -646,12 +817,14 @@ class Player {
   }
 
   // -------------------------
-  // SPLIT 4 BUFFERS (50% overlap)
+  // SPLIT INTO N BUFFERS (50% overlap)
   // -------------------------
-  splitInto4Buffers(audioBuffer) {
+  // N grains of length L = 2T/(N+1), each starting S = L/2 after the
+  // previous one - so they tile the whole take with 50% overlap, and the
+  // last one ends exactly at T. 8 slices = same rule, grains half as long.
+  splitIntoBuffers(audioBuffer, N) {
     const ctx = sharedCtx;
     const T = audioBuffer.length;
-    const N = 4;
 
     const L = Math.floor((2 * T) / (N + 1));
     const S = Math.floor(L / 2);
@@ -694,7 +867,7 @@ class Player {
     if (!this.buffers.length) return;
 
     this.isPlaying = true;
-    this.macroCounter = 15;
+    this.macroCounter = this.cycleSteps() - 1; // next tick wraps to step 0
 
     if (this.shuffleEnabled) {
       this.shuffleOrder();
@@ -727,10 +900,13 @@ class Player {
     // same recovery the visibilitychange handler already does below.
     if (now - this.nextTick > this.step16) {
       this.resetGains(now);
-      this.macroCounter = 15;
+      this.macroCounter = this.cycleSteps() - 1;
       this.nextTick = now + MIN_SCHEDULING_GAP;
       return;
     }
+
+    const N = this.sliceCount;
+    const cycle = this.cycleSteps();
 
     while (this.nextTick < now + SCHEDULER_LOOKAHEAD) {
       const scheduledTime = this.nextTick;
@@ -741,7 +917,7 @@ class Player {
       }
 
       this.macroCounter++;
-      if (this.macroCounter >= 16) {
+      if (this.macroCounter >= cycle) {
         this.macroCounter = 0;
       }
 
@@ -749,56 +925,36 @@ class Player {
         if (this.shuffleEnabled) {
           this.shuffleOrder();
         } else {
-          this.bufferOrder = [0, 1, 2, 3];
+          this.bufferOrder = Array.from({ length: N }, (_, i) => i);
         }
       }
 
       const triggerTime = Math.max(scheduledTime, now + MIN_SCHEDULING_GAP);
 
-      if (this.macroCounter === 0) {
-        this.currentLaneContent[0] = this.bufferOrder[0];
-        this.playIndex(this.bufferOrder[0], 0, triggerTime);
-        this.playIndexSlow(this.bufferOrder[0], 0, triggerTime);
-        this.scheduleFadeLane(0, 1, triggerTime);
+      // Lane k starts (grain + fade-in) on step 4k...
+      if (this.macroCounter % 4 === 0) {
+        const lane = this.macroCounter / 4;
+        this.currentLaneContent[lane] = this.bufferOrder[lane];
+        this.playIndex(this.bufferOrder[lane], lane, triggerTime);
+        this.playIndexSlow(this.bufferOrder[lane], lane, triggerTime);
+        this.scheduleFadeLane(lane, 1, triggerTime);
       }
 
-      if (this.macroCounter === 2) {
-        this.scheduleFadeLane(3, 0, triggerTime);
-      }
-
-      if (this.macroCounter === 4) {
-        this.currentLaneContent[1] = this.bufferOrder[1];
-        this.playIndex(this.bufferOrder[1], 1, triggerTime);
-        this.playIndexSlow(this.bufferOrder[1], 1, triggerTime);
-        this.scheduleFadeLane(1, 1, triggerTime);
-      }
-
-      if (this.macroCounter === 6) {
-        this.scheduleFadeLane(0, 0, triggerTime);
-      }
-
-      if (this.macroCounter === 8) {
-        this.currentLaneContent[2] = this.bufferOrder[2];
-        this.playIndex(this.bufferOrder[2], 2, triggerTime);
-        this.playIndexSlow(this.bufferOrder[2], 2, triggerTime);
-        this.scheduleFadeLane(2, 1, triggerTime);
-      }
-
-      if (this.macroCounter === 10) {
-        this.scheduleFadeLane(1, 0, triggerTime);
-      }
-
-      if (this.macroCounter === 12) {
-        this.currentLaneContent[3] = this.bufferOrder[3];
-        this.playIndex(this.bufferOrder[3], 3, triggerTime);
-        this.playIndexSlow(this.bufferOrder[3], 3, triggerTime);
-        this.scheduleFadeLane(3, 1, triggerTime);
-      }
-
-      if (this.macroCounter === 14) {
-        this.scheduleFadeLane(2, 0, triggerTime);
+      // ...and fades out 6 steps later, on step 4k+6 (wrapping around the
+      // cycle - the last lane's fade-out lands on step 2 of the next one).
+      // For 4 slices this is exactly the original fixed schedule:
+      // fade-outs on 2 (lane 3), 6 (lane 0), 10 (lane 1), 14 (lane 2).
+      const sinceFadeOut = (this.macroCounter - 6 + cycle) % cycle;
+      if (sinceFadeOut % 4 === 0) {
+        this.scheduleFadeLane(sinceFadeOut / 4, 0, triggerTime);
       }
     }
+  }
+
+  // One full pass over all grains: 4 steps per grain (16 for 4 slices, as
+  // the step16 name comes from; 32 for 8).
+  cycleSteps() {
+    return this.sliceCount * 4;
   }
 
   // -------------------------
@@ -824,6 +980,7 @@ class Player {
     src.buffer = isReverse ? this.buffersRev[contentIndex] : this.buffers[contentIndex];
 
     src.playbackRate.value = this.speedall;
+    src.rateFactor = 1;
 
     src.connect(this.originalEnvGains[laneIndex]);
 
@@ -841,6 +998,7 @@ class Player {
     src.buffer = isReverse ? this.buffersRev[contentIndex] : this.buffers[contentIndex];
 
     src.playbackRate.value = this.speedslow;
+    src.rateFactor = 0.5;
 
     src.connect(this.octaveEnvGains[laneIndex]);
 
@@ -871,6 +1029,364 @@ for (let i = 0; i < PLAYER_COUNT; i++) {
 }
 
 // -------------------------
+// SEND FX: DELAY + REVERB
+// -------------------------
+// playersBus -> delaySendGain ("Send in") -> DelayNode -> masterMix, with a
+// feedback loop through a fixed 80Hz rumble cut and the FILTER knob's tilt
+// pair. playersBus -> reverbSendGain ("Send in") -> Dattorro plate (wet
+// only, dry = 0 - it's a send, the dry signal already reaches masterMix
+// straight from playersBus) -> masterMix.
+//
+// The AudioContext only exists after the first Rec press, so the controls
+// below keep their own state in fxState and buildSendFx() reads it when the
+// graph is created; before that, moving them just updates the readouts.
+const SMOOTH_TIME = 0.02;
+const DELAY_MAX_TIME = 2;      // also the longest gap between two taps that still counts
+const DELAY_FEEDBACK = 0.5;    // fixed - only TAP and FILTER are on the panel
+const TAP_HISTORY = 4;         // average over the last 4 taps (3 intervals)
+const REVERB_WET = 0.6;
+
+const fxState = {
+  delaySend: 0,
+  delayTime: 0.375,
+  delayFilter: 0.5,
+  reverbSend: 0,
+  reverbDecay: 0.9,
+  reverbDamp: 0.3
+};
+
+let delaySendGain = null;
+let delayNode = null;
+let delayTiltLowpass = null;
+let delayTiltHighpass = null;
+let reverbSendGain = null;
+let reverbNode = null;
+
+// Feedback-loop tilt filter - same one SendS/NEWRACK use for the delay's
+// tone control. Knob centered (0.5) = both filters parked at their
+// transparent extreme; left sweeps a lowpass down (darkens each repeat),
+// right sweeps a highpass up (thins each repeat).
+const TILT_Q = 0.2;
+const TILT_LP_OFF = 20000, TILT_LP_DARK = 400;
+const TILT_HP_OFF = 20, TILT_HP_BRIGHT = 2600;
+
+function tiltFilterFreqs(knob) {
+  if (knob <= 0.5) {
+    const t = (0.5 - knob) / 0.5;
+    return { lowpassFreq: TILT_LP_OFF * Math.pow(TILT_LP_DARK / TILT_LP_OFF, t), highpassFreq: TILT_HP_OFF };
+  }
+  const t = (knob - 0.5) / 0.5;
+  return { lowpassFreq: TILT_LP_OFF, highpassFreq: TILT_HP_OFF * Math.pow(TILT_HP_BRIGHT / TILT_HP_OFF, t) };
+}
+
+function formatHz(f) {
+  return f >= 1000 ? `${(f / 1000).toFixed(1)}k` : `${Math.round(f)}`;
+}
+
+function formatTilt(knob) {
+  if (Math.abs(knob - 0.5) < 0.03) return "—";
+  const { lowpassFreq, highpassFreq } = tiltFilterFreqs(knob);
+  return knob < 0.5 ? `LP ${formatHz(lowpassFreq)}` : `HP ${formatHz(highpassFreq)}`;
+}
+
+// setTargetAtTime when the param is already live (no zipper noise while
+// dragging), plain .value assignment while building the graph.
+function setParam(param, value, ramp) {
+  if (ramp) param.setTargetAtTime(value, sharedCtx.currentTime, SMOOTH_TIME);
+  else param.value = value;
+}
+
+function applyDelayFilter(ramp) {
+  if (!delayTiltLowpass) return;
+  const { lowpassFreq, highpassFreq } = tiltFilterFreqs(fxState.delayFilter);
+  setParam(delayTiltLowpass.frequency, lowpassFreq, ramp);
+  setParam(delayTiltHighpass.frequency, highpassFreq, ramp);
+}
+
+// Loads a worklet module from a wrapper function (see reverb-worklet.js for
+// why the processors live inside functions instead of their own module
+// files). data: URL first - the only form Chrome accepts when the page is
+// opened from file:// - then blob: as a fallback for browsers that refuse a
+// data: module (served over http(s), blob: is the widely supported one).
+// Memoized per function, so both callers can ask without double-loading.
+const workletLoads = new Map();
+
+function loadWorkletFunction(ctx, fn) {
+  if (!workletLoads.has(fn)) {
+    const source = `(${fn.toString()})();`;
+    const dataUrl = "data:application/javascript;charset=utf-8," + encodeURIComponent(source);
+    workletLoads.set(fn, ctx.audioWorklet.addModule(dataUrl).catch(() => {
+      const blobUrl = URL.createObjectURL(new Blob([source], { type: "application/javascript" }));
+      return ctx.audioWorklet.addModule(blobUrl);
+    }));
+  }
+  return workletLoads.get(fn);
+}
+
+function buildSendFx(ctx) {
+  // Delay
+  delaySendGain = ctx.createGain();
+  delaySendGain.gain.value = fxState.delaySend;
+
+  delayNode = ctx.createDelay(DELAY_MAX_TIME);
+  delayNode.delayTime.value = fxState.delayTime;
+
+  const feedback = ctx.createGain();
+  feedback.gain.value = DELAY_FEEDBACK;
+
+  const fixedHipass = ctx.createBiquadFilter();
+  fixedHipass.type = "highpass";
+  fixedHipass.frequency.value = 80;
+  fixedHipass.Q.value = Math.SQRT1_2; // flat passband, so loop gain stays DELAY_FEEDBACK
+
+  delayTiltHighpass = ctx.createBiquadFilter();
+  delayTiltHighpass.type = "highpass";
+  delayTiltHighpass.Q.value = TILT_Q;
+  delayTiltLowpass = ctx.createBiquadFilter();
+  delayTiltLowpass.type = "lowpass";
+  delayTiltLowpass.Q.value = TILT_Q;
+  applyDelayFilter(false);
+
+  playersBus.connect(delaySendGain);
+  delaySendGain.connect(delayNode);
+  delayNode.connect(feedback);
+  feedback.connect(fixedHipass).connect(delayTiltHighpass).connect(delayTiltLowpass).connect(delayNode);
+  delayNode.connect(masterMix);
+
+  // Reverb - the worklet module loads asynchronously; until it's ready the
+  // reverb send simply isn't connected to anything (silent), the rest of
+  // the app runs normally.
+  reverbSendGain = ctx.createGain();
+  reverbSendGain.gain.value = fxState.reverbSend;
+  playersBus.connect(reverbSendGain);
+
+  loadWorkletFunction(ctx, dattorroReverbWorklet).then(() => {
+    reverbNode = new AudioWorkletNode(ctx, "DattorroReverb", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2]
+    });
+    reverbNode.parameters.get("dry").value = 0;
+    reverbNode.parameters.get("wet").value = REVERB_WET;
+    reverbNode.parameters.get("decay").value = fxState.reverbDecay;
+    reverbNode.parameters.get("damping").value = fxState.reverbDamp;
+
+    reverbSendGain.connect(reverbNode);
+    reverbNode.connect(masterMix);
+  }).catch((err) => {
+    console.error("Reverb worklet failed to load:", err);
+  });
+}
+
+function bindSendFader(inputId, valueId, stateKey, getGainNode) {
+  const input = document.getElementById(inputId);
+  const valueEl = document.getElementById(valueId);
+  input.addEventListener("input", () => {
+    const v = parseFloat(input.value);
+    fxState[stateKey] = v;
+    valueEl.textContent = `${Math.round(v * 100)}%`;
+    const node = getGainNode();
+    if (node) setParam(node.gain, v, true);
+  });
+}
+
+bindSendFader("delaySend", "delaySendValue", "delaySend", () => delaySendGain);
+bindSendFader("reverbSend", "reverbSendValue", "reverbSend", () => reverbSendGain);
+
+// TAP: delay time = average interval of the last few taps. A gap longer
+// than DELAY_MAX_TIME starts a fresh tap sequence instead of averaging in a
+// pause. pointerdown, not click - click fires on release, which would put
+// the tap timing at the mercy of how long the finger stays down.
+const delayTimeValueEl = document.getElementById("delayTimeValue");
+let tapTimes = [];
+
+function setDelayTime(seconds) {
+  fxState.delayTime = Math.min(DELAY_MAX_TIME, Math.max(0.01, seconds));
+  delayTimeValueEl.textContent = `${Math.round(fxState.delayTime * 1000)} ms`;
+  if (delayNode) delayNode.delayTime.setTargetAtTime(fxState.delayTime, sharedCtx.currentTime, 0.05);
+}
+
+document.getElementById("delayTap").addEventListener("pointerdown", () => {
+  const t = performance.now() / 1000;
+  if (tapTimes.length && t - tapTimes[tapTimes.length - 1] > DELAY_MAX_TIME) tapTimes = [];
+  tapTimes.push(t);
+  if (tapTimes.length > TAP_HISTORY) tapTimes.shift();
+  if (tapTimes.length < 2) return;
+  setDelayTime((tapTimes[tapTimes.length - 1] - tapTimes[0]) / (tapTimes.length - 1));
+});
+
+setDelayTime(fxState.delayTime);
+
+makeKnob(document.getElementById("delayFilterKnob"), {
+  min: 0,
+  max: 1,
+  value: fxState.delayFilter,
+  format: formatTilt,
+  onChange: (v) => {
+    fxState.delayFilter = v;
+    applyDelayFilter(true);
+  }
+});
+
+makeKnob(document.getElementById("reverbDecayKnob"), {
+  min: 0,
+  max: 0.95,
+  value: fxState.reverbDecay,
+  format: (v) => `${Math.round(v * 100)}%`,
+  onChange: (v) => {
+    fxState.reverbDecay = v;
+    if (reverbNode) setParam(reverbNode.parameters.get("decay"), v, true);
+  }
+});
+
+makeKnob(document.getElementById("reverbDampKnob"), {
+  min: 0,
+  max: 1,
+  value: fxState.reverbDamp,
+  format: (v) => `${Math.round(v * 100)}%`,
+  onChange: (v) => {
+    fxState.reverbDamp = v;
+    if (reverbNode) setParam(reverbNode.parameters.get("damping"), v, true);
+  }
+});
+
+// -------------------------
+// LOOP RECORDER (WAV, up to 8 min)
+// -------------------------
+// Records masterMix - exactly what's heard: all players + delay + reverb -
+// through the LoopRecorder worklet (recorder-worklet.js), which hands back
+// ready 16-bit stereo blocks. On stop they're wrapped in a WAV header and
+// downloaded as <date>_<time>_loop.wav (time = when recording started).
+const LOOP_REC_MAX_SEC = 8 * 60;
+
+const loopRec = {
+  btn: document.getElementById("loopRecBtn"),
+  led: document.getElementById("loopRecLed"),
+  timeEl: document.getElementById("loopRecTime"),
+  node: null,
+  chunks: [],
+  state: "idle", // idle | starting | recording | saving
+  startedAt: 0,
+  startDate: null,
+  maxTimer: null
+};
+
+function formatClock(sec) {
+  const s = Math.floor(sec);
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function setLoopRecUI(state) {
+  loopRec.state = state;
+  loopRec.led.classList.toggle("on", state === "recording");
+  loopRec.led.classList.toggle("busy", state === "starting" || state === "saving");
+  loopRec.btn.textContent = state === "recording" ? "Stop" : state === "idle" ? "Rec" : "...";
+  loopRec.btn.disabled = state === "starting" || state === "saving";
+  if (state === "idle") loopRec.timeEl.textContent = `00:00 / ${formatClock(LOOP_REC_MAX_SEC)}`;
+}
+
+function updateLoopRecTime() {
+  if (loopRec.state !== "recording") return;
+  const elapsed = Math.min(LOOP_REC_MAX_SEC, (performance.now() - loopRec.startedAt) / 1000);
+  loopRec.timeEl.textContent = `${formatClock(elapsed)} / ${formatClock(LOOP_REC_MAX_SEC)}`;
+}
+
+async function startLoopRec() {
+  setLoopRecUI("starting");
+  try {
+    const ctx = getSharedContext();
+    if (ctx.state === "suspended") await ctx.resume();
+
+    if (!loopRec.node) {
+      await loadWorkletFunction(ctx, loopRecorderWorklet);
+      loopRec.node = new AudioWorkletNode(ctx, "LoopRecorder", {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        channelCount: 2,
+        channelCountMode: "explicit"
+      });
+      loopRec.node.port.onmessage = (e) => {
+        if (e.data === "done") finishLoopRec();
+        else loopRec.chunks.push(e.data);
+      };
+      // The node only needs to be pulled by the graph, not heard: route its
+      // (silent) output to the destination through a 0-gain node.
+      const sink = ctx.createGain();
+      sink.gain.value = 0;
+      masterMix.connect(loopRec.node);
+      loopRec.node.connect(sink);
+      sink.connect(ctx.destination);
+    }
+
+    loopRec.chunks = [];
+    loopRec.startDate = new Date();
+    loopRec.startedAt = performance.now();
+    loopRec.node.port.postMessage("start");
+    setLoopRecUI("recording");
+    loopRec.maxTimer = setTimeout(stopLoopRec, LOOP_REC_MAX_SEC * 1000);
+  } catch (err) {
+    console.error("Loop recorder failed to start:", err);
+    setLoopRecUI("idle");
+  }
+}
+
+function stopLoopRec() {
+  if (loopRec.state !== "recording") return;
+  clearTimeout(loopRec.maxTimer);
+  updateLoopRecTime();
+  setLoopRecUI("saving");
+  loopRec.node.port.postMessage("stop"); // worklet flushes, then replies "done"
+}
+
+function finishLoopRec() {
+  const sampleRate = sharedCtx.sampleRate;
+  const dataBytes = loopRec.chunks.reduce((sum, c) => sum + c.byteLength, 0);
+
+  // 44-byte canonical PCM WAV header: 16-bit, 2 channels.
+  const header = new DataView(new ArrayBuffer(44));
+  const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) header.setUint8(offset + i, str.charCodeAt(i)); };
+  writeStr(0, "RIFF");
+  header.setUint32(4, 36 + dataBytes, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  header.setUint32(16, 16, true);              // fmt chunk size
+  header.setUint16(20, 1, true);               // PCM
+  header.setUint16(22, 2, true);               // channels
+  header.setUint32(24, sampleRate, true);
+  header.setUint32(28, sampleRate * 4, true);  // byte rate = rate * channels * 2 bytes
+  header.setUint16(32, 4, true);               // block align
+  header.setUint16(34, 16, true);              // bits per sample
+  writeStr(36, "data");
+  header.setUint32(40, dataBytes, true);
+
+  const blob = new Blob([header, ...loopRec.chunks], { type: "audio/wav" });
+  loopRec.chunks = [];
+
+  const d = loopRec.startDate;
+  const pad = (n) => String(n).padStart(2, "0");
+  const name = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_` +
+    `${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}_loop.wav`;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+  setLoopRecUI("idle");
+}
+
+loopRec.btn.addEventListener("click", () => {
+  if (loopRec.state === "idle") startLoopRec();
+  else if (loopRec.state === "recording") stopLoopRec();
+});
+
+setLoopRecUI("idle");
+
+// -------------------------
 // SHARED CLOCK DRIVER
 // -------------------------
 function rafLoop() {
@@ -880,6 +1396,7 @@ function rafLoop() {
   }
   players.forEach((p) => p.renderWaveform());
   players.forEach((p) => p.updateRecordingLabel());
+  updateLoopRecTime();
   requestAnimationFrame(rafLoop);
 }
 
@@ -890,7 +1407,7 @@ document.addEventListener("visibilitychange", () => {
     players.forEach((p) => {
       if (p.isPlaying) {
         p.resetGains(sharedCtx.currentTime);
-        p.macroCounter = 15;
+        p.macroCounter = p.cycleSteps() - 1;
         p.nextTick = sharedCtx.currentTime + MIN_SCHEDULING_GAP;
       }
     });
