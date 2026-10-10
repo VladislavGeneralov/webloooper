@@ -59,8 +59,8 @@
       --card-row-gap: 4px;
       --left-col: 70px;
       --fader-w: 30px;
-      --fader-h: 108px;
-      --switch-gap: 12px;
+      --fader-h: 58px;
+      --fader-top-gap: 12px;
       --waveform-h: 20px;
       --knob-size: 20px;
       --rec-btn: 24px;
@@ -118,8 +118,8 @@
         --card-row-gap: 20px;
         --left-col: 152px;
         --fader-w: 64px;
-        --fader-h: 400px;
-        --switch-gap: 24px;
+        --fader-h: 233px;
+        --fader-top-gap: 24px;
         --waveform-h: 112px;
         --knob-size: 80px;
         --rec-btn: 96px;
@@ -297,12 +297,11 @@
       margin-left: -6px;
     }
 
-    /* 4/8 switch on top, centered over the Orig/Low pair, then the
-       faders. Moving the switch here (from above the REC LED) made the
-       left column shorter by one switch row + gap, and --fader-h is
-       shorter by that drop plus this new row and its gap, so the fader
-       labels still line up with PITCH and the whole card loses one
-       switch row of height. */
+    /* Pitch knob on top, centered over the Orig/Low pair, then the faders.
+       The left column now ends with the low 4/8 switch row instead of the
+       Pitch knob, so it's short - and --fader-h is picked so the ORIG/LOW
+       labels sit on the same line as the 4/8 switch (label center = switch
+       center), which is what sets the card's height. */
     .right-panel {
       width: 100%;
       min-width: 0;
@@ -310,10 +309,10 @@
       flex-direction: column;
       align-items: center;
       /* The fader cap overhangs the groove by --thumb-w / 2 at the top of
-         its travel (see .mixer-fader-track input); --switch-gap is chosen
-         well above that, so a fader pushed all the way up never touches
-         the switch, with visible air between them. */
-      gap: var(--switch-gap);
+         its travel (see .mixer-fader-track input); --fader-top-gap is
+         chosen well above that, so a fader pushed all the way up never
+         touches the Pitch readout above it, with visible air between. */
+      gap: var(--fader-top-gap);
       justify-content: flex-start;
       padding-top: 4px;
       margin-right: 6px;
@@ -891,18 +890,18 @@
           <span class="knob-value"></span>
         </div>
 
-        <div class="knob-group">
-          <div class="knob" data-role="pitchKnob"></div>
-          <span class="knob-label">Pitch</span>
-          <span class="knob-value"></span>
-        </div>
-      </div>
-
-      <div class="right-panel">
         <div class="slice-row">
           <span class="slice-mark">4</span>
           <button class="slice-switch" data-role="sliceSwitch" type="button"></button>
           <span class="slice-mark">8</span>
+        </div>
+      </div>
+
+      <div class="right-panel">
+        <div class="knob-group">
+          <div class="knob" data-role="pitchKnob"></div>
+          <span class="knob-label">Pitch</span>
+          <span class="knob-value"></span>
         </div>
 
         <div class="fader-row">

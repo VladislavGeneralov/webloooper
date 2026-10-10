@@ -27,7 +27,8 @@ Open `index.html` directly in a browser (Chrome/Edge recommended) to run it.
 
 ## Controls per player
 
-- **4/8** (slide switch above the Orig/Low faders) — how many grains the take is
+- **4/8** (slide switch at the bottom of the left column, level with the
+  Orig/Low fader labels) — how many grains the take is
   cut into. Flipping it while a loop plays re-slices the same recording:
   the player's output fades out over 30ms, the take is re-cut and the loop
   restarts from the top with its normal fade-in (no click). Flipped before
@@ -46,7 +47,8 @@ Open `index.html` directly in a browser (Chrome/Edge recommended) to run it.
   playback order each cycle instead of the fixed 0-1-2-3 sequence.
 - **Rev prob** (rotary knob, drag up/down to turn, double-click resets) —
   probability that any given grain plays backward instead of forward.
-- **Pitch** (rotary knob, ±12 semitones, double-click resets to 0) —
+- **Pitch** (rotary knob above the Orig/Low faders, ±12 semitones,
+  double-click resets to 0) —
   varispeed, like a tape: every grain plays faster/higher or slower/lower
   and the step clock runs at the same rate, so the slicing stays identical
   and the loop just plays through it faster or slower.
