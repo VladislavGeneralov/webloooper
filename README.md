@@ -74,6 +74,11 @@ for up to 8 minutes. **Rec** starts it, the counter shows elapsed / 8:00,
 **Stop** (or reaching 8:00) saves it as `YYYY-MM-DD_HH-MM-SS_loop.wav`
 (16-bit stereo, the time is when recording started).
 
+The block also holds a horizontal stereo VU meter (L over R, green from the
+left → yellow → red at the right end), metering the same final mix the same
+way SCDJ's mixer meters do: per-frame peak ×1.4, small ~6px square LED
+segments (as many as fit the bar's length).
+
 ## Phone layout
 
 The page is sized to fit 390x664 CSS px (an iPhone 12–15 Safari viewport

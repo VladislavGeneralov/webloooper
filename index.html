@@ -28,6 +28,10 @@
       --rec-red: #b23327;
       --rec-amber: #b28a27;
       --led-green: #3ecf6e;
+      /* VU meter segment colors - same as SCDJ's mixer meters. */
+      --led-yellow: #e8c93e;
+      --led-red: #ff4d4d;
+      --led-off: #101012;
 
       /* Mobile-first sizing (same convention as kladminweb: small/compact
          values are the default, a min-width media query below scales them
@@ -62,6 +66,7 @@
       --rec-led: 7px;
       --toggle-size: 11px;
       --players-gap: 6px;
+      --vu-w: 400px;
 
       /* Fader groove + thumb - kept as variables (rather than fixed px)
          purely so desktop can be a genuine proportional scale-up, not
@@ -119,6 +124,7 @@
         --rec-led: 26px;
         --toggle-size: 34px;
         --players-gap: 20px;
+        --vu-w: 760px;
 
         --track-h: 8px;
         --thumb-w: 28px;
@@ -706,12 +712,79 @@
       width: min(100%, calc(var(--fx-w) + clamp(0px, (100% - var(--fx-w) * 2 - var(--players-gap)) * 1000, var(--fx-w) + var(--players-gap))));
       display: flex;
       align-items: center;
-      gap: calc(var(--card-gap) * 2);
+      gap: var(--card-gap);
     }
 
+    /* Three zones: title | VU meter | LED + Rec + time. The two side
+       zones share the leftover space 1 : 1.25, so the meter (fixed
+       --vu-w, shrinking only if the row is too narrow) sits a little left
+       of the block's center. min-width:auto on the side zones keeps their
+       content intact - only the meter gives way. */
     .loop-rec .fx-title {
-      flex: 1;
+      flex: 1 1 0;
     }
+
+    .loop-rec-controls {
+      flex: 1.25 1 0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: var(--card-gap);
+    }
+
+    /* Never squeezed by the meter: a shrunk flex item turned the round Rec
+       button into an oval and wrapped the time onto two lines. */
+    .loop-rec-controls > *,
+    .loop-rec .fx-title {
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    /* Stereo VU meter, horizontal take on SCDJ's LED-segment meters: L over
+       R, each a recessed groove of small flat square segments (no glow) -
+       green from the left, yellow, then red at the right end. Wants
+       --vu-w, and is the one thing in the row that shrinks when the row
+       is narrower (phone, 3-column desktop). */
+    .vu-meter {
+      flex: 0 1 var(--vu-w);
+      min-width: 0;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      column-gap: var(--tiny-gap);
+      row-gap: 2px;
+    }
+
+    .vu-ch {
+      font-size: var(--font-sm);
+      line-height: var(--label-lh);
+      color: var(--ink-muted);
+    }
+
+    /* Same box as SCDJ's .mx-meter, turned sideways: 8px thick (6px
+       segments + 1px border each side), 3px padding along the bar, none
+       across, #000 border, 2px gaps. main.js picks the segment count from
+       the bar's length so each segment stays a ~6px square (SCDJ: 6 x
+       6.7px) - a longer bar just holds more of them. */
+    .vu-bar {
+      display: flex;
+      gap: 2px;
+      height: 8px;
+      padding: 0 3px;
+      background: var(--groove);
+      border: 1px solid #000;
+      border-radius: 2px;
+    }
+
+    .vu-seg {
+      flex: 1;
+      border-radius: 1px;
+      background: var(--led-off);
+    }
+
+    .vu-seg.on-g { background: var(--led-green); }
+    .vu-seg.on-y { background: var(--led-yellow); }
+    .vu-seg.on-r { background: var(--led-red); }
 
     .loop-rec-btn {
       font-size: var(--font-sm);
@@ -893,9 +966,17 @@
 
     <div class="fx-block loop-rec">
       <div class="fx-title">Wav rec</div>
-      <span class="rec-led" id="loopRecLed"></span>
-      <button class="rack-btn rack-btn-round loop-rec-btn" id="loopRecBtn" type="button">Rec</button>
-      <span class="loop-rec-time" id="loopRecTime">00:00 / 08:00</span>
+      <div class="vu-meter">
+        <span class="vu-ch">L</span>
+        <div class="vu-bar" id="vuL"></div>
+        <span class="vu-ch">R</span>
+        <div class="vu-bar" id="vuR"></div>
+      </div>
+      <div class="loop-rec-controls">
+        <span class="rec-led" id="loopRecLed"></span>
+        <button class="rack-btn rack-btn-round loop-rec-btn" id="loopRecBtn" type="button">Rec</button>
+        <span class="loop-rec-time" id="loopRecTime">00:00 / 08:00</span>
+      </div>
     </div>
   </div>
 

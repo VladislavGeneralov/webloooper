@@ -36,6 +36,7 @@ function getSharedContext() {
     playersBus.connect(masterMix);
 
     buildSendFx(sharedCtx);
+    buildVuMeter(sharedCtx);
   }
   return sharedCtx;
 }
@@ -1387,6 +1388,90 @@ loopRec.btn.addEventListener("click", () => {
 setLoopRecUI("idle");
 
 // -------------------------
+// STEREO VU METER (in the WAV rec block)
+// -------------------------
+// Same metering as SCDJ's mixer meters, laid horizontally: per frame, the
+// peak |sample| of each channel, scaled x1.4, lights that many LED segments
+// from the left - green, then yellow, red at the right end (the last sixth
+// red and the sixth before it yellow, like SCDJ's 2 + 2 of 12). Tapped
+// from masterMix through a splitter (a mono mix is upmixed to L = R), so it
+// shows exactly what's heard and what WAV rec records - all the time,
+// whether or not WAV rec is recording.
+//
+// Segment COUNT follows the bar's length, so every segment stays a small
+// ~6px square like SCDJ's (6 x 6.7px) however long the bar is; rebuilt
+// whenever the bar is resized (rotation, window resize, layout wrap).
+const VU_SEG_PX = 6;
+const VU_GAP_PX = 2;   // matches .vu-bar gap
+const VU_PAD_PX = 3;   // matches .vu-bar horizontal padding
+
+const vuBars = ["vuL", "vuR"].map((id) => ({
+  el: document.getElementById(id),
+  segs: [],
+  analyser: null,
+  data: null,
+  lit: -1
+}));
+
+function buildVuSegments(bar) {
+  const inner = bar.el.clientWidth - VU_PAD_PX * 2;
+  const count = Math.max(6, Math.round((inner + VU_GAP_PX) / (VU_SEG_PX + VU_GAP_PX)));
+  if (count === bar.segs.length) return;
+  bar.el.replaceChildren();
+  bar.segs = [];
+  for (let i = 0; i < count; i++) {
+    const seg = document.createElement("div");
+    seg.className = "vu-seg";
+    bar.el.appendChild(seg);
+    bar.segs.push(seg);
+  }
+  bar.lit = -1; // force a full repaint on the next frame
+}
+
+vuBars.forEach((bar) => {
+  buildVuSegments(bar);
+  new ResizeObserver(() => buildVuSegments(bar)).observe(bar.el);
+});
+
+function buildVuMeter(ctx) {
+  const splitter = ctx.createChannelSplitter(2);
+  masterMix.connect(splitter);
+  vuBars.forEach((bar, ch) => {
+    bar.analyser = ctx.createAnalyser();
+    bar.analyser.fftSize = 1024;
+    bar.data = new Float32Array(bar.analyser.fftSize);
+    splitter.connect(bar.analyser, ch);
+  });
+}
+
+function updateVuMeter() {
+  vuBars.forEach((bar) => {
+    if (!bar.analyser) return;
+    bar.analyser.getFloatTimeDomainData(bar.data);
+    let peak = 0;
+    for (let i = 0; i < bar.data.length; i++) {
+      const v = Math.abs(bar.data[i]);
+      if (v > peak) peak = v;
+    }
+    const n = bar.segs.length;
+    const lit = Math.min(n, Math.round(peak * n * 1.4));
+    if (lit === bar.lit) return; // nothing changed - skip touching the DOM
+    bar.lit = lit;
+    const red = Math.max(1, Math.round(n / 6));
+    const yellow = Math.max(1, Math.round(n / 6));
+    bar.segs.forEach((seg, s) => {
+      let cls = "vu-seg";
+      if (s < lit) {
+        if (s >= n - red) cls += " on-r";
+        else if (s >= n - red - yellow) cls += " on-y";
+        else cls += " on-g";
+      }
+      seg.className = cls;
+    });
+  });
+}
+
+// -------------------------
 // SHARED CLOCK DRIVER
 // -------------------------
 function rafLoop() {
@@ -1397,6 +1482,7 @@ function rafLoop() {
   players.forEach((p) => p.renderWaveform());
   players.forEach((p) => p.updateRecordingLabel());
   updateLoopRecTime();
+  updateVuMeter();
   requestAnimationFrame(rafLoop);
 }
 
