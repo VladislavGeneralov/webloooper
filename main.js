@@ -300,23 +300,44 @@ class Player {
 
     const ctx = getSharedContext();
 
+    // channelCount ideal 2: ask for both channels of a stereo input (an
+    // audio interface's inputs 1+2, a stereo mic) - otherwise Chrome may hand
+    // over just one, and whatever is on the other is lost before it can be
+    // summed below. A mono device still just gives one channel.
     this.micStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: false,
         noiseSuppression: false,
-        autoGainControl: false
+        autoGainControl: false,
+        channelCount: { ideal: 2 }
       }
     });
 
     // MediaRecorder can only record a MediaStream, not a Web Audio node, so
-    // any input gain has to happen via a real audio-graph detour: mic ->
-    // GainNode -> MediaStreamDestination, then MediaRecorder records *that*
-    // stream instead of the raw mic stream. Currently unity (1x, was 1.3x) -
-    // the node stays in place so the input level is one number to change.
+    // anything done to the input has to happen via a real audio-graph
+    // detour: mic -> ... -> MediaStreamDestination, then MediaRecorder
+    // records *that* stream instead of the raw mic stream.
+    //
+    // L + R summed to mono: the splitter's two outputs both connect into
+    // one mono GainNode, and connections into the same input add up - a
+    // true sum, not the 0.5*(L+R) average a plain stereo->mono downmix
+    // would give, so a signal on only one input keeps its full level and
+    // lands in the center instead of one side. A mono mic comes out of
+    // the splitter as channel 0 + a silent channel 1, so it isn't doubled.
+    // (A device that sends the SAME signal on both channels does come out
+    // +6dB - that's what summing it means.)
+    //
+    // inputGain is the mono sum node, at unity (1x, was 1.3x) - kept as a
+    // node so the input level stays one number to change.
     this.micSource = ctx.createMediaStreamSource(this.micStream);
+    this.micSplitter = ctx.createChannelSplitter(2);
     this.inputGain = ctx.createGain();
+    this.inputGain.channelCount = 1;
+    this.inputGain.channelCountMode = "explicit";
     this.inputGain.gain.value = 1;
-    this.micSource.connect(this.inputGain);
+    this.micSource.connect(this.micSplitter);
+    this.micSplitter.connect(this.inputGain, 0);
+    this.micSplitter.connect(this.inputGain, 1);
     this.micDestination = ctx.createMediaStreamDestination();
     this.inputGain.connect(this.micDestination);
 

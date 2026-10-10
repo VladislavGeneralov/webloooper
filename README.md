@@ -33,8 +33,10 @@ Open `index.html` directly in a browser (Chrome/Edge recommended) to run it.
   restarts from the top with its normal fade-in (no click). Flipped before
   or during recording, it just applies to the next take.
 - **Rec / Stop** — one round transport button; its label swaps between
-  `Rec` → `Stop` → `...` (processing) → `Rec`. The mic is recorded at unity
-  gain (no boost).
+  `Rec` → `Stop` → `...` (processing) → `Rec`. The input's left and right
+  channels are summed (L+R) into one mono signal at unity gain, so a
+  source on only one input (e.g. interface input 1) records at full level
+  in the center; the same signal on both channels comes out +6dB.
 - **Orig / Low** — two independent vertical faders: volume of the
   original-pitch layer and volume of the octave-down copy layer (gain 0–4x,
   Orig starts at the middle = 2x). `Low` at 0 means the octave-down layer
