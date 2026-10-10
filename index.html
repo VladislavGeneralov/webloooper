@@ -692,11 +692,18 @@
     }
 
     /* Loop recorder row: title, LED, Rec/Stop, elapsed / max time. */
-    /* Always its own line under the effects, spanning the full page width:
-       flex-basis 100% forces the wrap and the width (it overrides
-       .fx-block's --fx-w width - on purpose here). */
+    /* Always its own line under the effects, exactly as wide as the
+       effects row above it: two blocks side by side (= 4 players) when
+       they fit, one block (= 2 players) when they wrap. "They fit" is
+       100% (the rack's width) >= 2 * --fx-w + gap - the same condition the
+       wrap itself follows. The clamp() turns that into a step: its middle
+       term is hugely negative (-> 0) below the threshold and hugely
+       positive (-> capped at --fx-w + gap) above it, so the width is
+       either --fx-w or 2 * --fx-w + gap, nothing in between. The row
+       above is then full, so this block always wraps onto its own line;
+       min(100%) keeps it inside the page if even one block doesn't fit. */
     .loop-rec {
-      flex-basis: 100%;
+      width: min(100%, calc(var(--fx-w) + clamp(0px, (100% - var(--fx-w) * 2 - var(--players-gap)) * 1000, var(--fx-w) + var(--players-gap))));
       display: flex;
       align-items: center;
       gap: calc(var(--card-gap) * 2);
