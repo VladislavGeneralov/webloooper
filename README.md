@@ -27,7 +27,7 @@ Open `index.html` directly in a browser (Chrome/Edge recommended) to run it.
 
 ## Controls per player
 
-- **4/8** (slide switch above the REC LED) — how many grains the take is
+- **4/8** (slide switch above the Orig/Low faders) — how many grains the take is
   cut into. Flipping it while a loop plays re-slices the same recording:
   the player's output fades out over 30ms, the take is re-cut and the loop
   restarts from the top with its normal fade-in (no click). Flipped before

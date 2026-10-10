@@ -59,7 +59,7 @@
       --card-row-gap: 4px;
       --left-col: 70px;
       --fader-w: 30px;
-      --fader-h: 152px;
+      --fader-h: 118px;
       --waveform-h: 20px;
       --knob-size: 20px;
       --rec-btn: 24px;
@@ -117,7 +117,7 @@
         --card-row-gap: 20px;
         --left-col: 152px;
         --fader-w: 64px;
-        --fader-h: 532px;
+        --fader-h: 432px;
         --waveform-h: 112px;
         --knob-size: 80px;
         --rec-btn: 96px;
@@ -295,11 +295,22 @@
       margin-left: -6px;
     }
 
+    /* 4/8 switch on top, centered over the Orig/Low pair, then the
+       faders. Moving the switch here (from above the REC LED) made the
+       left column shorter by one switch row + gap, and --fader-h is
+       shorter by that drop plus this new row and its gap, so the fader
+       labels still line up with PITCH and the whole card loses one
+       switch row of height. */
     .right-panel {
       width: 100%;
       min-width: 0;
       display: flex;
       flex-direction: column;
+      align-items: center;
+      /* Clears the fader cap's overhang above the groove at the top of its
+         travel (--thumb-w / 2, see .mixer-fader-track input) plus 2px, so
+         a fader pushed all the way up never touches the switch. */
+      gap: calc(var(--thumb-w) / 2 + 2px);
       justify-content: flex-start;
       padding-top: 4px;
       margin-right: 6px;
@@ -862,11 +873,6 @@
 
       <div class="left-panel">
         <div class="rec-group">
-          <div class="slice-row">
-            <span class="slice-mark">4</span>
-            <button class="slice-switch" data-role="sliceSwitch" type="button"></button>
-            <span class="slice-mark">8</span>
-          </div>
           <span class="rec-led" data-role="recLed"></span>
           <button class="rack-btn rack-btn-round" data-role="recStop" type="button">Rec</button>
         </div>
@@ -890,6 +896,12 @@
       </div>
 
       <div class="right-panel">
+        <div class="slice-row">
+          <span class="slice-mark">4</span>
+          <button class="slice-switch" data-role="sliceSwitch" type="button"></button>
+          <span class="slice-mark">8</span>
+        </div>
+
         <div class="fader-row">
           <div class="fader-col">
             <div class="mixer-fader-track">

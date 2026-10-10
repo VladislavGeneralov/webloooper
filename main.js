@@ -1,6 +1,6 @@
 const MAX_DURATION = 10;
 
-// The 4/8 switch above each player's REC LED: how many grains a recording is
+// The 4/8 switch above each player's Orig/Low faders: how many grains a recording is
 // cut into. Lane/envelope nodes are always built for the maximum, so the
 // switch never has to rebuild the audio graph - unused lanes just stay at 0.
 const SLICE_OPTIONS = [4, 8];
