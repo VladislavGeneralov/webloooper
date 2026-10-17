@@ -68,7 +68,7 @@
       --toggle-size: 11px;
       --players-gap: 6px;
       --vu-w: 400px;
-      --fx-send-w: 130px;
+      --fx-send-w: 90px;
 
       /* Fader groove + thumb - kept as variables (rather than fixed px)
          purely so desktop can be a genuine proportional scale-up, not
@@ -128,7 +128,7 @@
         --toggle-size: 34px;
         --players-gap: 20px;
         --vu-w: 760px;
-        --fx-send-w: 280px;
+        --fx-send-w: 150px;
 
         --track-h: 8px;
         --thumb-w: 28px;
@@ -720,18 +720,91 @@
     }
 
     /* Loop recorder row: title, LED, Rec/Stop, elapsed / max time. */
-    /* Always its own line under the effects, exactly as wide as the
-       effects row above it: two blocks side by side (= 4 players) when
-       they fit, one block (= 2 players) when they wrap. "They fit" is
+    /* Bottom row: always its own line under the effects, exactly as wide
+       as the effects row above it: two blocks side by side (= 4 players)
+       when they fit, one block (= 2 players) when they wrap. "They fit" is
        100% (the rack's width) >= 2 * --fx-w + gap - the same condition the
        wrap itself follows. The clamp() turns that into a step: its middle
        term is hugely negative (-> 0) below the threshold and hugely
        positive (-> capped at --fx-w + gap) above it, so the width is
        either --fx-w or 2 * --fx-w + gap, nothing in between. The row
-       above is then full, so this block always wraps onto its own line;
-       min(100%) keeps it inside the page if even one block doesn't fit. */
-    .loop-rec {
+       above is then full, so this row always wraps onto its own line;
+       min(100%) keeps it inside the page if even one block doesn't fit.
+
+       Inside it: the MIC module on the left, exactly 1/6 of the row
+       (minus the gap), and WAV REC taking the rest. The 1/6 is an
+       explicit flex-basis, not a 1 : 5 flex-grow split - grow ratios only
+       divide the space left after each block's own padding, which made the
+       small block come out at ~1/5 instead. */
+    .bottom-row {
       width: min(100%, calc(var(--fx-w) + clamp(0px, (100% - var(--fx-w) * 2 - var(--players-gap)) * 1000, var(--fx-w) + var(--players-gap))));
+      display: flex;
+      gap: var(--players-gap);
+    }
+
+    .bottom-row > .fx-block {
+      width: auto;
+      min-width: 0;
+    }
+
+    /* MIC: live mic straight into the mix, bypassing the loopers - level
+       knob + MONO/STEREO slide switch (same switch as 4/8), centered. They
+       sit side by side when the module is wide enough (wide desktop) and
+       wrap one under the other when it isn't (phone, 3-column desktop).
+       Horizontal padding is the plain --card-pad (the other FX blocks use
+       2x) - this module is only 1/6 of the row and needs the width. */
+    .mic-module {
+      flex: 0 0 calc((100% - var(--players-gap)) / 6);
+      padding-left: var(--card-pad);
+      padding-right: var(--card-pad);
+      container-type: inline-size;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-content: center;
+      gap: var(--panel-gap) var(--card-gap);
+    }
+
+    /* Undo .fx-block > .knob-group's flex: 1 1 0 here - stretched to the
+       full module width, the knob group always pushed the toggle onto a
+       second line, even when there was room beside it. */
+    .mic-module > .knob-group {
+      flex: none;
+    }
+
+    /* MONO / STEREO marks: full words only when the module itself is wide
+       enough to hold "MONO [switch] STEREO" on one line (a container query
+       on .mic-module, so it follows the module's real width, not the
+       screen's); otherwise just M / S. */
+    .mic-mode-row .slice-mark {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .mic-mode-row .mark-long {
+      display: none;
+    }
+
+    /* On desktop the module is 81px inside at 1280 (3 players across) -
+       the full-size 68px switch didn't fit even with just M / S, so the
+       switch is smaller here than the 4/8 one: 36 x 18. */
+    @media (min-width: 560px) {
+      .mic-module {
+        --toggle-size: 18px;
+      }
+    }
+
+    @container (min-width: 180px) {
+      .mic-mode-row .mark-long {
+        display: inline;
+      }
+
+      .mic-mode-row .mark-short {
+        display: none;
+      }
+    }
+
+    .loop-rec {
+      flex: 1 1 0;
       display: flex;
       align-items: center;
       gap: var(--card-gap);
@@ -962,6 +1035,11 @@
         <span class="knob-value"></span>
       </div>
       <div class="knob-group">
+        <div class="knob" id="delayFeedbackKnob"></div>
+        <span class="knob-label">Feedback</span>
+        <span class="knob-value"></span>
+      </div>
+      <div class="knob-group">
         <div class="knob" id="delayFilterKnob"></div>
         <span class="knob-label">Filter</span>
         <span class="knob-value"></span>
@@ -995,20 +1073,40 @@
         <span class="knob-label">Diffusion</span>
         <span class="knob-value"></span>
       </div>
+      <div class="knob-group">
+        <div class="knob" id="reverbFilterKnob"></div>
+        <span class="knob-label">Filter</span>
+        <span class="knob-value"></span>
+      </div>
     </div>
 
-    <div class="fx-block loop-rec">
-      <div class="fx-title">Wav rec</div>
-      <div class="vu-meter">
-        <span class="vu-ch">L</span>
-        <div class="vu-bar" id="vuL"></div>
-        <span class="vu-ch">R</span>
-        <div class="vu-bar" id="vuR"></div>
+    <div class="bottom-row">
+      <div class="fx-block mic-module">
+        <div class="knob-group">
+          <div class="knob" id="micLevelKnob"></div>
+          <span class="knob-label">Mic</span>
+          <span class="knob-value"></span>
+        </div>
+        <div class="slice-row mic-mode-row">
+          <span class="slice-mark"><span class="mark-long">Mono</span><span class="mark-short">M</span></span>
+          <button class="slice-switch" id="micMono" type="button"></button>
+          <span class="slice-mark"><span class="mark-long">Stereo</span><span class="mark-short">S</span></span>
+        </div>
       </div>
-      <div class="loop-rec-controls">
-        <span class="rec-led" id="loopRecLed"></span>
-        <button class="rack-btn rack-btn-round loop-rec-btn" id="loopRecBtn" type="button">Rec</button>
-        <span class="loop-rec-time" id="loopRecTime">00:00 / 08:00</span>
+
+      <div class="fx-block loop-rec">
+        <div class="fx-title">Wav rec</div>
+        <div class="vu-meter">
+          <span class="vu-ch">L</span>
+          <div class="vu-bar" id="vuL"></div>
+          <span class="vu-ch">R</span>
+          <div class="vu-bar" id="vuR"></div>
+        </div>
+        <div class="loop-rec-controls">
+          <span class="rec-led" id="loopRecLed"></span>
+          <button class="rack-btn rack-btn-round loop-rec-btn" id="loopRecBtn" type="button">Rec</button>
+          <span class="loop-rec-time" id="loopRecTime">00:00 / 08:00</span>
+        </div>
       </div>
     </div>
   </div>

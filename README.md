@@ -65,11 +65,14 @@ send effects, each with its own horizontal **Send in** fader:
   right 64 ms, log scale (center ≈ 277 ms). **Tap** sets the same time from
   the average of the last few taps and moves the Speed knob to it (clamped
   to 64–1200 ms; a pause over 2s starts a new tap sequence); **Tempo**
-  under it shows that time as BPM (time = one beat). **Filter** is a tilt
+  under it shows that time as BPM (time = one beat). **Feedback** (5–95%,
+  default 50%) is how much of each repeat goes back in. **Filter** is a tilt
   filter inside the feedback loop: left = lowpass (darker repeats), right =
-  highpass (thinner repeats), center = off. Feedback is fixed at 50%.
+  highpass (thinner repeats), center = off.
 - **Reverb** — Dattorro plate (same processor as SendS/NEWRACK), **Decay**,
-  **Damp** and **Diffusion** knobs. Diffusion moves all four diffusion
+  **Damp**, **Diffusion** and **Filter** knobs. Filter is the same tilt
+  filter as the delay's, but on the reverb's input (the whole tail starts
+  darker/thinner) rather than in a feedback loop. Diffusion moves all four diffusion
   coefficients together (input 1/2 + decay 1/2, scaled from their
   defaults): 75% = the original sound, left = discrete echoes, right =
   denser/smoother tail (capped at 0.95 so it doesn't ring).
@@ -79,6 +82,23 @@ to their right.
 
 Each block is as wide as two player columns: on a desktop wide enough for
 4 players in a row they sit side by side, on a phone one under the other.
+
+## MIC (bottom row, left)
+
+Live mic straight into the mix, bypassing the loopers — e.g. to sing or
+play through the delay/reverb, or just dry. It joins the same bus as the
+players, so it's heard dry, goes into Delay/Reverb through their own
+**Send in** faders, and is recorded by WAV rec.
+
+- **Mic** knob — level 0–200%. Starts at 0; the mic is only opened the
+  first time it's turned up.
+- **Mono / Stereo** slide switch (same kind as 4/8; labelled M / S where
+  the module is narrow), Mono by default — Mono: the input's L + R summed
+  into one mono signal (same as the players' input); Stereo: the input
+  passes in stereo as is. Switching crossfades, no click.
+
+There's no echo cancellation (it's an instrument input), so a live mic
+through speakers will feed back — use headphones.
 
 ## WAV rec (bottom of the page)
 

@@ -20,8 +20,9 @@ const WAVEFORM_CANVAS_H = 112;
 // -------------------------
 let sharedCtx = null;
 let masterMix = null;
-// Sum of all 4 players (their outputGains), before the send FX: goes to
-// masterMix dry and to each send's own "Send in" gain.
+// Sum of all 4 players (their outputGains) plus the MIC module's live mic,
+// before the send FX: goes to masterMix dry and to each send's own
+// "Send in" gain.
 let playersBus = null;
 
 function getSharedContext() {
@@ -39,6 +40,45 @@ function getSharedContext() {
     buildVuMeter(sharedCtx);
   }
   return sharedCtx;
+}
+
+// -------------------------
+// MIC INPUT (shared by the players and the MIC module)
+// -------------------------
+// Opens the mic (no echo cancellation / noise suppression / AGC - this is an
+// instrument input, not a call) and sums its L + R into one mono GainNode.
+//
+// channelCount ideal 2: ask for both channels of a stereo input (an audio
+// interface's inputs 1+2, a stereo mic) - otherwise Chrome may hand over
+// just one, and whatever is on the other is lost before it can be summed.
+// A mono device still just gives one channel.
+//
+// The splitter's two outputs both connect into one mono GainNode, and
+// connections into the same input add up - a true sum, not the 0.5*(L+R)
+// average a plain stereo->mono downmix would give, so a signal on only one
+// input keeps its full level and lands in the center instead of one side.
+// A mono mic comes out of the splitter as channel 0 + a silent channel 1,
+// so it isn't doubled. (A device that sends the SAME signal on both
+// channels does come out +6dB - that's what summing it means.)
+async function openMicInput(ctx) {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      channelCount: { ideal: 2 }
+    }
+  });
+  const source = ctx.createMediaStreamSource(stream);
+  const splitter = ctx.createChannelSplitter(2);
+  const sum = ctx.createGain();
+  sum.channelCount = 1;
+  sum.channelCountMode = "explicit";
+  sum.gain.value = 1;
+  source.connect(splitter);
+  splitter.connect(sum, 0);
+  splitter.connect(sum, 1);
+  return { stream, source, sum };
 }
 
 // -------------------------
@@ -300,44 +340,15 @@ class Player {
 
     const ctx = getSharedContext();
 
-    // channelCount ideal 2: ask for both channels of a stereo input (an
-    // audio interface's inputs 1+2, a stereo mic) - otherwise Chrome may hand
-    // over just one, and whatever is on the other is lost before it can be
-    // summed below. A mono device still just gives one channel.
-    this.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: { ideal: 2 }
-      }
-    });
-
-    // MediaRecorder can only record a MediaStream, not a Web Audio node, so
-    // anything done to the input has to happen via a real audio-graph
-    // detour: mic -> ... -> MediaStreamDestination, then MediaRecorder
-    // records *that* stream instead of the raw mic stream.
-    //
-    // L + R summed to mono: the splitter's two outputs both connect into
-    // one mono GainNode, and connections into the same input add up - a
-    // true sum, not the 0.5*(L+R) average a plain stereo->mono downmix
-    // would give, so a signal on only one input keeps its full level and
-    // lands in the center instead of one side. A mono mic comes out of
-    // the splitter as channel 0 + a silent channel 1, so it isn't doubled.
-    // (A device that sends the SAME signal on both channels does come out
-    // +6dB - that's what summing it means.)
-    //
-    // inputGain is the mono sum node, at unity (1x, was 1.3x) - kept as a
-    // node so the input level stays one number to change.
-    this.micSource = ctx.createMediaStreamSource(this.micStream);
-    this.micSplitter = ctx.createChannelSplitter(2);
-    this.inputGain = ctx.createGain();
-    this.inputGain.channelCount = 1;
-    this.inputGain.channelCountMode = "explicit";
-    this.inputGain.gain.value = 1;
-    this.micSource.connect(this.micSplitter);
-    this.micSplitter.connect(this.inputGain, 0);
-    this.micSplitter.connect(this.inputGain, 1);
+    // Mic -> L+R summed to one mono node (see openMicInput). MediaRecorder
+    // can only record a MediaStream, not a Web Audio node, so the summed
+    // signal goes on to a MediaStreamDestination and MediaRecorder records
+    // *that* stream instead of the raw mic stream. inputGain is the mono sum
+    // node, at unity (1x, was 1.3x) - kept as a node so the input level
+    // stays one number to change.
+    const mic = await openMicInput(ctx);
+    this.micStream = mic.stream;
+    this.inputGain = mic.sum;
     this.micDestination = ctx.createMediaStreamDestination();
     this.inputGain.connect(this.micDestination);
 
@@ -1067,18 +1078,21 @@ const DELAY_MAX_TIME = 2;      // DelayNode buffer - comfortably above the SPEED
 const DELAY_SLOW = 1.2;        // SPEED knob fully left: 1200 ms
 const DELAY_FAST = 0.064;      // SPEED knob fully right: 64 ms
 const TAP_RESET_GAP = 2;       // a pause longer than this between taps starts a new tap sequence
-const DELAY_FEEDBACK = 0.5;    // fixed - only TAP, SPEED and FILTER are on the panel
+const DELAY_FEEDBACK_MIN = 0.05; // FEEDBACK knob range: 5-95%
+const DELAY_FEEDBACK_MAX = 0.95;
 const TAP_HISTORY = 4;         // average over the last 4 taps (3 intervals)
 const REVERB_WET = 0.6;
 
 const fxState = {
   delaySend: 0,
   delayTime: 0.375,
+  delayFeedback: 0.5,
   delayFilter: 0.5,
   reverbSend: 0,
   reverbDecay: 0.9,
   reverbDamp: 0.3,
-  reverbDiffusion: 0.75   // = the processor's own default diffusion (see REVERB_DIFFUSION)
+  reverbDiffusion: 0.75,  // = the processor's own default diffusion (see REVERB_DIFFUSION)
+  reverbFilter: 0.5       // center = off
 };
 
 // DIFFUSION knob: one control for all four Dattorro diffusion coefficients
@@ -1111,15 +1125,20 @@ function applyReverbDiffusion(ramp) {
 
 let delaySendGain = null;
 let delayNode = null;
+let delayFeedbackGain = null;
 let delayTiltLowpass = null;
 let delayTiltHighpass = null;
 let reverbSendGain = null;
+let reverbTiltLowpass = null;
+let reverbTiltHighpass = null;
 let reverbNode = null;
 
-// Feedback-loop tilt filter - same one SendS/NEWRACK use for the delay's
-// tone control. Knob centered (0.5) = both filters parked at their
-// transparent extreme; left sweeps a lowpass down (darkens each repeat),
-// right sweeps a highpass up (thins each repeat).
+// Tilt filter - same one SendS/NEWRACK use for the delay's tone control.
+// Knob centered (0.5) = both filters parked at their transparent extreme;
+// left sweeps a lowpass down (darker), right sweeps a highpass up
+// (thinner). Used twice: the delay's FILTER sits inside its feedback loop
+// (each repeat gets darker/thinner), the reverb's FILTER on the reverb's
+// input (the whole tail is darker/thinner from the start).
 const TILT_Q = 0.2;
 const TILT_LP_OFF = 20000, TILT_LP_DARK = 400;
 const TILT_HP_OFF = 20, TILT_HP_BRIGHT = 2600;
@@ -1150,11 +1169,21 @@ function setParam(param, value, ramp) {
   else param.value = value;
 }
 
-function applyDelayFilter(ramp) {
-  if (!delayTiltLowpass) return;
-  const { lowpassFreq, highpassFreq } = tiltFilterFreqs(fxState.delayFilter);
-  setParam(delayTiltLowpass.frequency, lowpassFreq, ramp);
-  setParam(delayTiltHighpass.frequency, highpassFreq, ramp);
+function applyTilt(lowpass, highpass, knob, ramp) {
+  if (!lowpass) return;
+  const { lowpassFreq, highpassFreq } = tiltFilterFreqs(knob);
+  setParam(lowpass.frequency, lowpassFreq, ramp);
+  setParam(highpass.frequency, highpassFreq, ramp);
+}
+
+function createTiltPair(ctx) {
+  const highpass = ctx.createBiquadFilter();
+  highpass.type = "highpass";
+  highpass.Q.value = TILT_Q;
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = "lowpass";
+  lowpass.Q.value = TILT_Q;
+  return { highpass, lowpass };
 }
 
 // Loads a worklet module from a wrapper function (see reverb-worklet.js for
@@ -1185,34 +1214,32 @@ function buildSendFx(ctx) {
   delayNode = ctx.createDelay(DELAY_MAX_TIME);
   delayNode.delayTime.value = fxState.delayTime;
 
-  const feedback = ctx.createGain();
-  feedback.gain.value = DELAY_FEEDBACK;
+  delayFeedbackGain = ctx.createGain();
+  delayFeedbackGain.gain.value = fxState.delayFeedback;
 
   const fixedHipass = ctx.createBiquadFilter();
   fixedHipass.type = "highpass";
   fixedHipass.frequency.value = 80;
-  fixedHipass.Q.value = Math.SQRT1_2; // flat passband, so loop gain stays DELAY_FEEDBACK
+  fixedHipass.Q.value = Math.SQRT1_2; // flat passband, so loop gain == the FEEDBACK knob
 
-  delayTiltHighpass = ctx.createBiquadFilter();
-  delayTiltHighpass.type = "highpass";
-  delayTiltHighpass.Q.value = TILT_Q;
-  delayTiltLowpass = ctx.createBiquadFilter();
-  delayTiltLowpass.type = "lowpass";
-  delayTiltLowpass.Q.value = TILT_Q;
-  applyDelayFilter(false);
+  ({ highpass: delayTiltHighpass, lowpass: delayTiltLowpass } = createTiltPair(ctx));
+  applyTilt(delayTiltLowpass, delayTiltHighpass, fxState.delayFilter, false);
 
   playersBus.connect(delaySendGain);
   delaySendGain.connect(delayNode);
-  delayNode.connect(feedback);
-  feedback.connect(fixedHipass).connect(delayTiltHighpass).connect(delayTiltLowpass).connect(delayNode);
+  delayNode.connect(delayFeedbackGain);
+  delayFeedbackGain.connect(fixedHipass).connect(delayTiltHighpass).connect(delayTiltLowpass).connect(delayNode);
   delayNode.connect(masterMix);
 
-  // Reverb - the worklet module loads asynchronously; until it's ready the
-  // reverb send simply isn't connected to anything (silent), the rest of
-  // the app runs normally.
+  // Reverb: Send in -> input FILTER (tilt pair) -> Dattorro. The worklet
+  // module loads asynchronously; until it's ready the filtered send simply
+  // isn't connected to anything (silent), the rest of the app runs normally.
   reverbSendGain = ctx.createGain();
   reverbSendGain.gain.value = fxState.reverbSend;
+  ({ highpass: reverbTiltHighpass, lowpass: reverbTiltLowpass } = createTiltPair(ctx));
+  applyTilt(reverbTiltLowpass, reverbTiltHighpass, fxState.reverbFilter, false);
   playersBus.connect(reverbSendGain);
+  reverbSendGain.connect(reverbTiltHighpass).connect(reverbTiltLowpass);
 
   loadWorkletFunction(ctx, dattorroReverbWorklet).then(() => {
     reverbNode = new AudioWorkletNode(ctx, "DattorroReverb", {
@@ -1226,7 +1253,7 @@ function buildSendFx(ctx) {
     reverbNode.parameters.get("damping").value = fxState.reverbDamp;
     applyReverbDiffusion(false);
 
-    reverbSendGain.connect(reverbNode);
+    reverbTiltLowpass.connect(reverbNode);
     reverbNode.connect(masterMix);
   }).catch((err) => {
     console.error("Reverb worklet failed to load:", err);
@@ -1290,6 +1317,20 @@ document.getElementById("delayTap").addEventListener("pointerdown", () => {
 
 setDelayTime(fxState.delayTime);
 
+// FEEDBACK: how much of each repeat goes back into the delay (5-95%).
+// The loop's fixed 80Hz highpass has a flat passband, so this is the real
+// loop gain (with FILTER centered): each repeat is this much of the last.
+makeKnob(document.getElementById("delayFeedbackKnob"), {
+  min: DELAY_FEEDBACK_MIN,
+  max: DELAY_FEEDBACK_MAX,
+  value: fxState.delayFeedback,
+  format: (v) => `${Math.round(v * 100)}%`,
+  onChange: (v) => {
+    fxState.delayFeedback = v;
+    if (delayFeedbackGain) setParam(delayFeedbackGain.gain, v, true);
+  }
+});
+
 makeKnob(document.getElementById("delayFilterKnob"), {
   min: 0,
   max: 1,
@@ -1297,7 +1338,7 @@ makeKnob(document.getElementById("delayFilterKnob"), {
   format: formatTilt,
   onChange: (v) => {
     fxState.delayFilter = v;
-    applyDelayFilter(true);
+    applyTilt(delayTiltLowpass, delayTiltHighpass, v, true);
   }
 });
 
@@ -1333,6 +1374,99 @@ makeKnob(document.getElementById("reverbDiffusionKnob"), {
     applyReverbDiffusion(true);
   }
 });
+
+makeKnob(document.getElementById("reverbFilterKnob"), {
+  min: 0,
+  max: 1,
+  value: fxState.reverbFilter,
+  format: formatTilt,
+  onChange: (v) => {
+    fxState.reverbFilter = v;
+    applyTilt(reverbTiltLowpass, reverbTiltHighpass, v, true);
+  }
+});
+
+// -------------------------
+// MIC MODULE (live mic, bypassing the loopers)
+// -------------------------
+// mic -> [MONO on: L+R summed to mono (see openMicInput) | off: stereo as
+// is] -> MIC level (0-200%) -> playersBus, i.e. into the same bus as the
+// players: heard dry, into delay/reverb through their own Send in faders,
+// and recorded by WAV rec. The knob starts at 0 and the mic isn't even
+// opened until it's first turned up. No echo cancellation (instrument
+// input) - live mic through speakers will feed back; use headphones.
+//
+// Both paths are always connected, each through its own gate gain; MONO
+// crossfades the gates (SMOOTH_TIME) instead of reconnecting nodes, so
+// flipping it while playing doesn't click.
+const MIC_MAX_GAIN = 2;
+let micLevel = 0;
+let micMono = true;
+let micLevelGain = null;
+let micMonoGate = null;
+let micStereoGate = null;
+let micOpening = null;
+
+function applyMicMono(ramp) {
+  if (!micMonoGate) return;
+  setParam(micMonoGate.gain, micMono ? 1 : 0, ramp);
+  setParam(micStereoGate.gain, micMono ? 0 : 1, ramp);
+}
+
+function openMicModule() {
+  if (micOpening) return micOpening;
+  const ctx = getSharedContext();
+  if (ctx.state === "suspended") ctx.resume();
+  micOpening = openMicInput(ctx).then((mic) => {
+    micLevelGain = ctx.createGain();
+    micLevelGain.gain.value = micLevel;
+
+    micMonoGate = ctx.createGain();
+    mic.sum.connect(micMonoGate);
+
+    // Stereo path: straight from the source, kept 2-channel (a mono mic is
+    // upmixed to L = R here, so it still plays in the center).
+    micStereoGate = ctx.createGain();
+    micStereoGate.channelCount = 2;
+    micStereoGate.channelCountMode = "explicit";
+    mic.source.connect(micStereoGate);
+
+    applyMicMono(false);
+    micMonoGate.connect(micLevelGain);
+    micStereoGate.connect(micLevelGain);
+    micLevelGain.connect(playersBus);
+  }).catch((err) => {
+    console.error("MIC module: mic failed to open:", err);
+    micOpening = null; // let the next turn of the knob try again
+  });
+  return micOpening;
+}
+
+makeKnob(document.getElementById("micLevelKnob"), {
+  min: 0,
+  max: MIC_MAX_GAIN,
+  value: micLevel,
+  format: (v) => `${Math.round(v * 100)}%`,
+  onChange: (v) => {
+    micLevel = v;
+    if (micLevelGain) setParam(micLevelGain.gain, v, true);
+    else if (v > 0) openMicModule();
+  }
+});
+
+// MONO / STEREO slide switch (same widget as 4/8): left = mono, right
+// ("on" position) = stereo.
+const micMonoBtn = document.getElementById("micMono");
+function renderMicMono() {
+  micMonoBtn.classList.toggle("on", !micMono);
+  micMonoBtn.setAttribute("aria-label", micMono ? "Mono" : "Stereo");
+}
+renderMicMono();
+micMonoBtn.onclick = () => {
+  micMono = !micMono;
+  renderMicMono();
+  applyMicMono(true);
+};
 
 // -------------------------
 // LOOP RECORDER (WAV, up to 8 min)
