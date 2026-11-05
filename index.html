@@ -144,6 +144,8 @@
       -webkit-tap-highlight-color: transparent;
     }
 
+    body > .eq-credit { margin: 8px 0 4px; }
+
     body {
       font-family: Arial, Helvetica, sans-serif;
       margin: 0;
@@ -1110,6 +1112,72 @@
       </div>
     </div>
   </div>
+
+  <!-- ellectroniqa credit + "i" card. The SAME block lives in klaminweb/index.html,
+       SCDJ/dj-booth.html and webloooper/index.html (and their copies in site/) — keep them identical.
+       Look copied from the homepage bio "i" (.info-btn / .info-text in site/style.css), scaled to 11px text.
+       Only the block's position is set per page, outside this block. -->
+  <style>
+    .eq-credit {
+      position: relative;
+      display: flex; justify-content: center; align-items: center;
+      gap: 3px;
+      font: 11px/14px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      letter-spacing: normal; text-transform: none;
+    }
+    .eq-credit-link { color: #6d6d6d; text-decoration: none; }
+    .eq-credit-link:hover, .eq-credit-link:active { color: #D5A430; }
+    .eq-credit-i {
+      position: relative;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 7px; height: 7px; padding: 0; margin: 0;
+      box-sizing: border-box;
+      border: 1px solid #6d6d6d; border-radius: 50%;
+      background: transparent; color: #6d6d6d;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: color .2s ease, border-color .2s ease;
+    }
+    /* the "i" is drawn, not typed (a font glyph sits off-center), same as the homepage */
+    .eq-credit-i svg { display: block; width: 1px; height: 3px; }
+    .eq-credit-i:hover, .eq-credit-i[aria-expanded="true"] { color: #D5A430; border-color: #D5A430; }
+    .eq-credit-i:focus-visible { outline: 2px solid #D5A430; outline-offset: 2px; }
+    /* card floats above the line, centered on it — doesn't push the app layout */
+    .eq-credit-card {
+      position: absolute; bottom: calc(100% + 8px); left: 50%;
+      transform: translateX(-50%);
+      width: min(320px, calc(100vw - 24px)); box-sizing: border-box;
+      padding: 10px 14px;
+      background: #3a3a3a; border-radius: 4px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, .5);
+      color: #ffffff; font-size: 12.3px; line-height: 1.5; text-align: left;
+      z-index: 1000;
+    }
+    .eq-credit-card[hidden] { display: none; }
+    .eq-credit-card p { margin: 0 0 .7em; }
+    .eq-credit-card p:last-child { margin-bottom: 0; }
+  </style>
+  <div class="eq-credit">
+    <a class="eq-credit-link" href="https://ellectroniqa.com" target="_blank" rel="noopener">created by ellectroniqa</a>
+    <button class="eq-credit-i" type="button" aria-label="about ellectroniqa" aria-expanded="false" aria-controls="eqCreditCard"><svg viewBox="0 0 4 12" fill="currentColor" aria-hidden="true"><circle cx="2" cy="1.5" r="1.5"/><rect x="0.75" y="4.5" width="2.5" height="7.5" rx="0.5"/></svg></button>
+    <div class="eq-credit-card" id="eqCreditCard" hidden>
+      <p><em>ellectroniqa</em> (aka <em>Хулиганская Электроника</em>) is a techno / electro / breakbeat music producer and dj, sound artist, synth maker and educator based in Almaty, Kazakhstan. He builds experimental hardware and software, runs workshops and educational courses, creates dancefloor-oriented music and does experimental sound performances under his alias <em>klad mineralov</em>.</p>
+    </div>
+  </div>
+  <script>
+  (function () {
+    var btn = document.querySelector('.eq-credit-i');
+    var card = document.getElementById('eqCreditCard');
+    function setOpen(v) { card.hidden = !v; btn.setAttribute('aria-expanded', v ? 'true' : 'false'); }
+    btn.addEventListener('click', function () { setOpen(card.hidden); });
+    // tap anywhere outside the credit line closes the card
+    document.addEventListener('pointerdown', function (e) {
+      if (!card.hidden && !e.target.closest('.eq-credit')) setOpen(false);
+    }, true);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
+  })();
+  </script>
+  <!-- /ellectroniqa credit -->
 
   <script src="reverb-worklet.js"></script>
   <script src="recorder-worklet.js"></script>
